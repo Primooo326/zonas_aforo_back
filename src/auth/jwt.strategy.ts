@@ -22,6 +22,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: { sub: string }) {
     const edificio = await this.edificioModel.findById(payload.sub);
     if (!edificio) throw new UnauthorizedException();
-    return { id: edificio._id, email: edificio.email, nombre: edificio.nombre };
+    return { id: edificio._id.toString(), email: edificio.email, nombre: edificio.nombre };
   }
 }

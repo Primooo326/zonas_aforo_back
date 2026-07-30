@@ -32,6 +32,7 @@ export class CreateZonaDto {
   @Min(1)
   lapsoMinutos: number;
 
+  @IsOptional()
   @IsMongoId()
-  edificioId: string;
+  edificioId?: string;
 }
