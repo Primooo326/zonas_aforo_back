@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -12,17 +16,22 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async register(dto: { nombre: string; email: string; password: string; direccion: string; telefono: string }) {
+  async register(dto: { nombre: string; email: string; password: string }) {
+    // dto is validated by class-validator via RegisterDto
     const exists = await this.edificioModel.findOne({ email: dto.email });
     if (exists) throw new ConflictException('El email ya está registrado');
 
     const hashed = await bcrypt.hash(dto.password, 10);
-    const edificio = await this.edificioModel.create({ ...dto, password: hashed });
+    const edificio = await this.edificioModel.create({
+      ...dto,
+      password: hashed,
+    });
 
     return this.generateToken(edificio);
   }
 
   async login(dto: { email: string; password: string }) {
+    // dto is validated by class-validator via LoginDto
     const edificio = await this.edificioModel.findOne({ email: dto.email });
     if (!edificio) throw new UnauthorizedException('Credenciales inválidas');
 
@@ -33,15 +42,17 @@ export class AuthService {
   }
 
   private generateToken(edificio: any) {
-    const payload = { sub: edificio._id.toString(), email: edificio.email, nombre: edificio.nombre };
+    const payload = {
+      sub: edificio._id.toString(),
+      email: edificio.email,
+      nombre: edificio.nombre,
+    };
     return {
       access_token: this.jwtService.sign(payload),
       edificio: {
         id: edificio._id.toString(),
         nombre: edificio.nombre,
         email: edificio.email,
-        direccion: edificio.direccion,
-        telefono: edificio.telefono,
       },
     };
   }

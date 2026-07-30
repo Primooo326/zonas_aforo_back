@@ -19,7 +19,9 @@ import { Edificio, EdificioSchema } from '../edificios/edificio.schema';
       }),
       inject: [ConfigService],
     }),
-    MongooseModule.forFeature([{ name: Edificio.name, schema: EdificioSchema }]),
+    MongooseModule.forFeature([
+      { name: Edificio.name, schema: EdificioSchema },
+    ]),
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

@@ -5,7 +5,9 @@ import { ZonasController } from './zonas.controller';
 import { ZonasService } from './zonas.service';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Zona.name, schema: ZonaSchema }])],
+  imports: [
+    MongooseModule.forFeature([{ name: Zona.name, schema: ZonaSchema }]),
+  ],
   controllers: [ZonasController],
   providers: [ZonasService],
   exports: [ZonasService],
