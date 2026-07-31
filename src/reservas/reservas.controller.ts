@@ -6,16 +6,19 @@ import {
   Query,
   Body,
   HttpCode,
+  UseGuards,
 } from '@nestjs/common';
 import { ReservasService } from './reservas.service';
 import { CreateReservaDto } from './dto/create-reserva.dto';
 import { CreateSolicitudDto } from './dto/create-solicitud.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller()
 export class ReservasController {
   constructor(private reservasService: ReservasService) {}
 
   @Post('reservas')
+  @UseGuards(JwtAuthGuard)
   crear(@Body() dto: CreateReservaDto) {
     return this.reservasService.crear({
       ...dto,
@@ -55,6 +58,7 @@ export class ReservasController {
   }
 
   @Get('edificio/:edificioId/reservas')
+  @UseGuards(JwtAuthGuard)
   findByEdificio(
     @Param('edificioId') edificioId: string,
     @Query('fecha') fecha?: string,
@@ -69,11 +73,13 @@ export class ReservasController {
   }
 
   @Post('reservas/:id/cancelar')
+  @UseGuards(JwtAuthGuard)
   cancelar(@Param('id') id: string) {
     return this.reservasService.cancelar(id);
   }
 
   @Get('edificio/:edificioId/reportes')
+  @UseGuards(JwtAuthGuard)
   reportes(@Param('edificioId') edificioId: string) {
     return this.reservasService.obtenerReportes(edificioId);
   }
