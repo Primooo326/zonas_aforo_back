@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install dependencies based on package-lock.json
 COPY package*.json ./
-RUN npm ci
+RUN npm install --no-audit --no-fund
 
 # Copy source code and build project
 COPY . .
@@ -19,7 +19,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev --no-audit --no-fund
 
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
