@@ -11,14 +11,18 @@ export class Zona {
   @Prop()
   descripcion: string;
 
-  @Prop({ required: true })
-  horarioInicio: string;
-
-  @Prop({ required: true })
-  horarioFin: string;
-
-  @Prop({ required: true })
-  diasDisponibles: string[];
+  @Prop({
+    type: [
+      {
+        dia: { type: String },
+        inicio: { type: String },
+        fin: { type: String },
+      },
+    ],
+    required: true,
+    default: [],
+  })
+  horarios: { dia: string; inicio: string; fin: string }[];
 
   @Prop({ required: true })
   aforoMaximo: number;

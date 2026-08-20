@@ -15,22 +15,33 @@ export class ZonasService {
   constructor(@InjectModel(Zona.name) private zonaModel: Model<Zona>) {}
 
   private validarLapso(
-    horarioInicio: string,
-    horarioFin: string,
+    horarios: { dia: string; inicio: string; fin: string }[],
     lapsoMinutos: number,
   ) {
-    const [h1, m1] = horarioInicio.split(':').map(Number);
-    const [h2, m2] = horarioFin.split(':').map(Number);
-    const totalMinutos = h2 * 60 + m2 - (h1 * 60 + m1);
-    if (totalMinutos <= 0) {
-      throw new BadRequestException(
-        'El horario de fin debe ser posterior al de inicio',
-      );
+    if (!horarios || horarios.length === 0) {
+      throw new BadRequestException('Selecciona al menos un día');
     }
-    if (lapsoMinutos > totalMinutos) {
-      throw new BadRequestException(
-        `El lapso (${lapsoMinutos}min) excede el horario disponible (${totalMinutos}min)`,
-      );
+
+    const diasVistos = new Set<string>();
+    for (const h of horarios) {
+      if (diasVistos.has(h.dia)) {
+        throw new BadRequestException(`El día ${h.dia} está duplicado`);
+      }
+      diasVistos.add(h.dia);
+
+      const [h1, m1] = h.inicio.split(':').map(Number);
+      const [h2, m2] = h.fin.split(':').map(Number);
+      const totalMinutos = h2 * 60 + m2 - (h1 * 60 + m1);
+      if (totalMinutos <= 0) {
+        throw new BadRequestException(
+          `El horario de fin de ${h.dia} debe ser posterior al de inicio`,
+        );
+      }
+      if (lapsoMinutos > totalMinutos) {
+        throw new BadRequestException(
+          `El lapso (${lapsoMinutos}min) excede el horario disponible de ${h.dia} (${totalMinutos}min)`,
+        );
+      }
     }
   }
 
@@ -44,7 +55,7 @@ export class ZonasService {
   }
 
   async create(dto: CreateZonaDto) {
-    this.validarLapso(dto.horarioInicio, dto.horarioFin, dto.lapsoMinutos);
+    this.validarLapso(dto.horarios, dto.lapsoMinutos);
     return this.zonaModel.create({
       ...dto,
       edificioId: new Types.ObjectId(dto.edificioId),
@@ -67,30 +78,18 @@ export class ZonasService {
   async update(id: string, dto: UpdateZonaDto, edificioId: string) {
     await this.validarPropietario(id, edificioId);
 
-    const horarioInicio = dto.horarioInicio;
-    const horarioFin = dto.horarioFin;
-    const lapsoMinutos = dto.lapsoMinutos;
+    const zona = await this.zonaModel.findById(id).lean();
+    if (!zona) throw new NotFoundException('Zona no encontrada');
 
-    if (
-      (horarioInicio || horarioFin || lapsoMinutos) &&
-      !(horarioInicio && horarioFin && lapsoMinutos)
-    ) {
-      const zona = await this.zonaModel.findById(id).lean();
-      if (!zona) throw new NotFoundException('Zona no encontrada');
-      this.validarLapso(
-        horarioInicio || zona.horarioInicio,
-        horarioFin || zona.horarioFin,
-        lapsoMinutos ?? zona.lapsoMinutos,
-      );
-    } else if (horarioInicio && horarioFin && lapsoMinutos) {
-      this.validarLapso(horarioInicio, horarioFin, lapsoMinutos);
-    }
+    const horarios = dto.horarios ?? zona.horarios ?? [];
+    const lapsoMinutos = dto.lapsoMinutos ?? zona.lapsoMinutos;
+    this.validarLapso(horarios, lapsoMinutos);
 
-    const zona = await this.zonaModel
+    const actualizada = await this.zonaModel
       .findByIdAndUpdate(id, dto, { new: true })
       .lean();
-    if (!zona) throw new NotFoundException('Zona no encontrada');
-    return zona;
+    if (!actualizada) throw new NotFoundException('Zona no encontrada');
+    return actualizada;
   }
 
   async remove(id: string, edificioId: string) {
@@ -103,9 +102,7 @@ export class ZonasService {
   async findPublicByEdificio(edificioId: string) {
     return this.zonaModel
       .find({ edificioId: new Types.ObjectId(edificioId) })
-      .select(
-        'nombre descripcion horarioInicio horarioFin diasDisponibles aforoMaximo lapsoMinutos',
-      )
+      .select('nombre descripcion horarios aforoMaximo lapsoMinutos')
       .lean();
   }
 }

@@ -62,21 +62,22 @@ export class ReservasService {
       'Sábado',
     ];
     const diaSemana = diasSemana[fechaSel.getDay()];
-    if (!zona.diasDisponibles.includes(diaSemana)) {
+    const horarioDia = (zona.horarios || []).find((h) => h.dia === diaSemana);
+    if (!horarioDia) {
       throw new BadRequestException(
         `La zona no está disponible los ${diaSemana}`,
       );
     }
 
-    if (horaInicio < zona.horarioInicio) {
+    if (horaInicio < horarioDia.inicio) {
       throw new BadRequestException(
-        `La hora de inicio (${horaInicio}) es anterior al horario disponible (${zona.horarioInicio})`,
+        `La hora de inicio (${horaInicio}) es anterior al horario disponible (${horarioDia.inicio})`,
       );
     }
 
-    if (horaFin > zona.horarioFin) {
+    if (horaFin > horarioDia.fin) {
       throw new BadRequestException(
-        `La hora de fin (${horaFin}) excede el horario disponible (${zona.horarioFin})`,
+        `La hora de fin (${horaFin}) excede el horario disponible (${horarioDia.fin})`,
       );
     }
 
@@ -185,9 +186,7 @@ export class ReservasService {
       id: (zona as any)._id,
       nombre: zona.nombre,
       descripcion: zona.descripcion,
-      horarioInicio: zona.horarioInicio,
-      horarioFin: zona.horarioFin,
-      diasDisponibles: zona.diasDisponibles,
+      horarios: zona.horarios || [],
       aforoMaximo: zona.aforoMaximo,
       lapsoMinutos: zona.lapsoMinutos,
       edificioId: (zona as any).edificioId,
