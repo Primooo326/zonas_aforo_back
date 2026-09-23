@@ -12,6 +12,8 @@ import { EdificioModule } from './edificios/edificio.module';
 import { ZonasModule } from './zonas/zonas.module';
 import { ReservasModule } from './reservas/reservas.module';
 import { EventsModule } from './events/events.module';
+import { InmueblesModule } from './inmuebles/inmuebles.module';
+import { PropietariosModule } from './propietarios/propietarios.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { EventsModule } from './events/events.module';
     ZonasModule,
     ReservasModule,
     EventsModule,
+    InmueblesModule,
+    PropietariosModule,
   ],
   providers: [
     {

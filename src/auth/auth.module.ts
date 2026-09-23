@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { Edificio, EdificioSchema } from '../edificios/edificio.schema';
+import { Propietario, PropietarioSchema } from '../propietarios/propietario.schema';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { Edificio, EdificioSchema } from '../edificios/edificio.schema';
     }),
     MongooseModule.forFeature([
       { name: Edificio.name, schema: EdificioSchema },
+      { name: Propietario.name, schema: PropietarioSchema },
     ]),
   ],
   controllers: [AuthController],

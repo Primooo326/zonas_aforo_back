@@ -46,6 +46,8 @@ export class AuthService {
       sub: edificio._id.toString(),
       email: edificio.email,
       nombre: edificio.nombre,
+      edificioId: edificio._id.toString(),
+      role: 'edificio',
     };
     return {
       access_token: this.jwtService.sign(payload),
