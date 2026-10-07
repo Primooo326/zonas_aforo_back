@@ -56,6 +56,9 @@ export class InmueblesService {
       estado: dto.estado || 'activa',
       imagenes: dto.imagenes || [],
     };
+    if (dto.censoUnidadId && Types.ObjectId.isValid(dto.censoUnidadId)) {
+      data.censoUnidadId = new Types.ObjectId(dto.censoUnidadId);
+    }
     if (propietarioId) {
       data.propietarioId = new Types.ObjectId(propietarioId);
     }
@@ -86,16 +89,26 @@ export class InmueblesService {
       filter.$or = [
         { observacion: { $regex: query.search, $options: 'i' } },
         { telefono: { $regex: query.search, $options: 'i' } },
+        { torre: { $regex: query.search, $options: 'i' } },
+        { numeroApto: { $regex: query.search, $options: 'i' } },
+        { identificador: { $regex: query.search, $options: 'i' } },
       ];
     }
 
-    return this.inmuebleModel.find(filter).sort({ createdAt: -1 }).lean();
+    return this.inmuebleModel
+      .find(filter)
+      .populate('censoUnidadId', 'identificador torre numeroApto')
+      .sort({ createdAt: -1 })
+      .lean();
   }
 
   async findOne(id: string) {
     if (!Types.ObjectId.isValid(id))
       throw new BadRequestException('ID inválido');
-    const inmueble = await this.inmuebleModel.findById(id).lean();
+    const inmueble = await this.inmuebleModel
+      .findById(id)
+      .populate('censoUnidadId', 'identificador torre numeroApto')
+      .lean();
     if (!inmueble) throw new NotFoundException('Inmueble no encontrado');
     return inmueble;
   }
@@ -115,8 +128,13 @@ export class InmueblesService {
   ) {
     await this.validarPropietario(id, edificioId, propietarioId);
     this.validarCamposCondicionales(dto);
+    const updateData: any = { ...dto };
+    if (dto.censoUnidadId && Types.ObjectId.isValid(dto.censoUnidadId)) {
+      updateData.censoUnidadId = new Types.ObjectId(dto.censoUnidadId);
+    }
     const actualizado = await this.inmuebleModel
-      .findByIdAndUpdate(id, dto, { new: true })
+      .findByIdAndUpdate(id, updateData, { new: true })
+      .populate('censoUnidadId', 'identificador torre numeroApto')
       .lean();
     if (!actualizado) throw new NotFoundException('Inmueble no encontrado');
     return actualizado;

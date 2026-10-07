@@ -78,6 +78,9 @@ export class InmueblesController {
         parsed.imagenes = [parsed.imagenes];
       }
     }
+    if (parsed.censoUnidadId === '' || parsed.censoUnidadId === 'null' || parsed.censoUnidadId === 'undefined') {
+      delete parsed.censoUnidadId;
+    }
     return parsed;
   }
 

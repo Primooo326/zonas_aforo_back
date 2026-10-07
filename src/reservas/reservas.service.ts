@@ -8,11 +8,13 @@ import { Model, Types } from 'mongoose';
 import { Reserva } from './reserva.schema';
 import { ZonasService } from '../zonas/zonas.service';
 import { EventsGateway } from '../events/events.gateway';
+import { CensoUnidad, CensoUnidadDocument } from '../censo/censo.schema';
 
 @Injectable()
 export class ReservasService {
   constructor(
     @InjectModel(Reserva.name) private reservaModel: Model<Reserva>,
+    @InjectModel(CensoUnidad.name) private censoModel: Model<CensoUnidadDocument>,
     private zonasService: ZonasService,
     private eventsGateway: EventsGateway,
   ) {}
@@ -117,7 +119,9 @@ export class ReservasService {
     horaFin: string;
     nombreSolicitante: string;
     torreInmueble: string;
-    tipo: string;
+    tipo?: string;
+    censoUnidadId?: string;
+    telefonoContacto?: string;
   }) {
     await this.validarReglas(
       dto.zonaId,
@@ -137,8 +141,56 @@ export class ReservasService {
       throw new BadRequestException('Aforo completo en esta franja horaria');
     }
 
+    let censoUnidadObjId: Types.ObjectId | undefined = undefined;
+    let esCensoVerificado = false;
+    let torreInmueble = dto.torreInmueble;
+    let tipo = dto.tipo || 'propietario';
+
+    if (dto.censoUnidadId && Types.ObjectId.isValid(dto.censoUnidadId)) {
+      const unidad = await this.censoModel.findById(dto.censoUnidadId);
+      if (unidad) {
+        censoUnidadObjId = unidad._id as Types.ObjectId;
+        if (!torreInmueble) {
+          torreInmueble =
+            unidad.identificador ||
+            `${unidad.torre ? unidad.torre + ' - ' : ''}Apto ${unidad.numeroApto || ''}`;
+        }
+
+        // Cotejar si el solicitante o su teléfono coinciden con algún residente registrado
+        const clean = (s?: string) => (s || '').toLowerCase().trim();
+        const cleanName = clean(dto.nombreSolicitante);
+        const cleanTel = (dto.telefonoContacto || '').replace(/\D/g, '');
+
+        const match = unidad.personas?.find((p) => {
+          const pName = clean(p.nombreCompleto);
+          const pTel = (p.telefono || '').replace(/\D/g, '');
+          const matchName =
+            cleanName &&
+            (pName.includes(cleanName) || cleanName.includes(pName));
+          const matchTel =
+            cleanTel &&
+            pTel &&
+            (cleanTel.endsWith(pTel) || pTel.endsWith(cleanTel));
+          return matchName || matchTel;
+        });
+
+        if (match) {
+          esCensoVerificado = true;
+          tipo =
+            match.condicion === 'arrendatario'
+              ? 'arrendatario'
+              : 'propietario';
+        }
+      }
+    }
+
     const reserva = await this.reservaModel.create({
       ...dto,
+      torreInmueble,
+      tipo,
+      censoUnidadId: censoUnidadObjId,
+      esCensoVerificado,
+      telefonoContacto: dto.telefonoContacto,
       edificioId: new Types.ObjectId(dto.edificioId),
       zonaId: new Types.ObjectId(dto.zonaId),
     });
@@ -162,6 +214,7 @@ export class ReservasService {
     return this.reservaModel
       .find(query)
       .populate('zonaId')
+      .populate('censoUnidadId', 'identificador torre numeroApto')
       .sort({ fecha: -1, horaInicio: -1 })
       .lean();
   }
@@ -204,6 +257,8 @@ export class ReservasService {
     nombreSolicitante: string;
     torreInmueble: string;
     tipo?: string;
+    censoUnidadId?: string;
+    telefonoContacto?: string;
   }) {
     const zona = await this.zonasService.findOne(dto.zonaId);
     const [h, m] = dto.horaInicio.split(':').map(Number);
@@ -219,6 +274,8 @@ export class ReservasService {
       nombreSolicitante: dto.nombreSolicitante,
       torreInmueble: dto.torreInmueble,
       tipo: dto.tipo || 'propietario',
+      censoUnidadId: dto.censoUnidadId,
+      telefonoContacto: dto.telefonoContacto,
     });
   }
 

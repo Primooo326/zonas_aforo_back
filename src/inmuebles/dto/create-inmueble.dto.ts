@@ -94,4 +94,24 @@ export class CreateInmuebleDto {
 
   @IsOptional()
   propietarioId?: string;
+
+  @IsOptional()
+  @IsString()
+  censoUnidadId?: string;
+
+  @IsOptional()
+  @IsString()
+  torre?: string;
+
+  @IsOptional()
+  @IsString()
+  numeroApto?: string;
+
+  @IsOptional()
+  @IsString()
+  identificador?: string;
+
+  @IsOptional()
+  @IsString()
+  itemAsignadoRef?: string;
 }

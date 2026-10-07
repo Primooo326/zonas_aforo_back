@@ -70,6 +70,21 @@ export class Inmueble {
   @Prop({ type: Types.ObjectId, ref: 'Propietario', required: false })
   propietarioId?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'CensoUnidad', required: false, index: true })
+  censoUnidadId?: Types.ObjectId;
+
+  @Prop({ trim: true })
+  torre?: string;
+
+  @Prop({ trim: true })
+  numeroApto?: string;
+
+  @Prop({ trim: true })
+  identificador?: string;
+
+  @Prop({ trim: true })
+  itemAsignadoRef?: string;
+
   @Prop({
     required: true,
     enum: ESTADO_INMUEBLE,
@@ -83,6 +98,7 @@ export class Inmueble {
 export const InmuebleSchema = SchemaFactory.createForClass(Inmueble);
 
 // Índices compuestos para performance <200ms listado
+InmuebleSchema.index({ edificioId: 1, censoUnidadId: 1 });
 InmuebleSchema.index({ edificioId: 1, estado: 1, tipo: 1 });
 InmuebleSchema.index({ edificioId: 1, estado: 1, transaccion: 1 });
 InmuebleSchema.index({ createdAt: -1 });

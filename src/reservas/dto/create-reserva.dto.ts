@@ -25,4 +25,12 @@ export class CreateReservaDto {
   @IsOptional()
   @IsString()
   tipo?: string;
+
+  @IsOptional()
+  @IsString()
+  censoUnidadId?: string;
+
+  @IsOptional()
+  @IsString()
+  telefonoContacto?: string;
 }

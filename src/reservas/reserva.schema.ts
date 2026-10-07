@@ -29,8 +29,20 @@ export class Reserva {
   @Prop({ required: true, default: 'propietario' })
   tipo: string;
 
+  @Prop({ type: Types.ObjectId, ref: 'CensoUnidad', required: false, index: true })
+  censoUnidadId?: Types.ObjectId;
+
+  @Prop({ default: false })
+  esCensoVerificado?: boolean;
+
+  @Prop({ trim: true })
+  telefonoContacto?: string;
+
   @Prop({ default: 'activa' })
   estado: string;
 }
 
 export const ReservaSchema = SchemaFactory.createForClass(Reserva);
+
+ReservaSchema.index({ edificioId: 1, fecha: 1, estado: 1 });
+ReservaSchema.index({ edificioId: 1, censoUnidadId: 1 });

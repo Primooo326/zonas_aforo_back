@@ -156,7 +156,7 @@ export class CensoController {
 
   @Get('public/:edificioId/unidades')
   async getUnidadesPublicas(@Param('edificioId') edificioId: string) {
-    return this.censoService.getCatalogoUnidades(edificioId);
+    return this.censoService.getPublicCatalogoUnidades(edificioId);
   }
 
   @Post('public/:edificioId')

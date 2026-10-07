@@ -565,9 +565,22 @@ export class CensoService {
         edificioId: new Types.ObjectId(edificioId),
         estado: 'aprobado',
       })
-      .select('identificador torre numeroApto piso metrosCuadrados parqueaderosAsignados bodegasAsignadas')
+      .select(
+        'identificador torre numeroApto piso metrosCuadrados tieneBalcon tienePatio parqueaderosAsignados bodegasAsignadas personas',
+      )
       .sort({ torre: 1, numeroApto: 1 })
-      .exec();
+      .lean();
+  }
+
+  async getPublicCatalogoUnidades(edificioId: string) {
+    return this.censoModel
+      .find({
+        edificioId: new Types.ObjectId(edificioId),
+        estado: 'aprobado',
+      })
+      .select('identificador torre numeroApto')
+      .sort({ torre: 1, numeroApto: 1 })
+      .lean();
   }
 
   async getInventarioParqueaderos(edificioId: string) {

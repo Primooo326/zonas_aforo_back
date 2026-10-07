@@ -5,10 +5,14 @@ import { ReservasController } from './reservas.controller';
 import { ReservasService } from './reservas.service';
 import { ZonasModule } from '../zonas/zonas.module';
 import { EventsModule } from '../events/events.module';
+import { CensoUnidad, CensoUnidadSchema } from '../censo/censo.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Reserva.name, schema: ReservaSchema }]),
+    MongooseModule.forFeature([
+      { name: Reserva.name, schema: ReservaSchema },
+      { name: CensoUnidad.name, schema: CensoUnidadSchema },
+    ]),
     ZonasModule,
     EventsModule,
   ],

@@ -19,4 +19,12 @@ export class CreateSolicitudDto {
   @IsOptional()
   @IsString()
   tipo?: string;
+
+  @IsOptional()
+  @IsString()
+  censoUnidadId?: string;
+
+  @IsOptional()
+  @IsString()
+  telefonoContacto?: string;
 }
