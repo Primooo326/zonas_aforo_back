@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
@@ -14,6 +12,7 @@ import { ReservasModule } from './reservas/reservas.module';
 import { EventsModule } from './events/events.module';
 import { InmueblesModule } from './inmuebles/inmuebles.module';
 import { PropietariosModule } from './propietarios/propietarios.module';
+import { CensoModule } from './censo/censo.module';
 
 @Module({
   imports: [
@@ -29,12 +28,6 @@ import { PropietariosModule } from './propietarios/propietarios.module';
       }),
       inject: [ConfigService],
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: 10,
-      },
-    ]),
     AuthModule,
     EdificioModule,
     ZonasModule,
@@ -42,12 +35,8 @@ import { PropietariosModule } from './propietarios/propietarios.module';
     EventsModule,
     InmueblesModule,
     PropietariosModule,
+    CensoModule,
   ],
-  providers: [
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
-  ],
+  providers: [],
 })
 export class AppModule {}
