@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { CensoService, calcularEdad, categorizarEdad } from './censo.service';
-import { CensoUnidad } from './censo.schema';
+import { CensoUnidad, ParqueaderoInventario, BodegaInventario } from './censo.schema';
 import { Types } from 'mongoose';
 
 describe('CensoService', () => {
@@ -17,6 +17,14 @@ describe('CensoService', () => {
     exec: jest.fn(),
   };
 
+  const mockInventarioModel = {
+    find: jest.fn(),
+    findOne: jest.fn(),
+    findOneAndUpdate: jest.fn(),
+    deleteMany: jest.fn(),
+    exec: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -24,6 +32,14 @@ describe('CensoService', () => {
         {
           provide: getModelToken(CensoUnidad.name),
           useValue: mockCensoModel,
+        },
+        {
+          provide: getModelToken(ParqueaderoInventario.name),
+          useValue: mockInventarioModel,
+        },
+        {
+          provide: getModelToken(BodegaInventario.name),
+          useValue: mockInventarioModel,
         },
       ],
     }).compile();

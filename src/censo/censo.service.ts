@@ -473,6 +473,93 @@ export class CensoService {
       }
     }
 
+    // Mapear residentes por clave "torre_apto" o "identificador"
+    const residentesPorUnidad = new Map<string, any[]>();
+    if (dto.residentes && Array.isArray(dto.residentes)) {
+      for (const r of dto.residentes) {
+        const torreNorm = normalizarTorre(r.torre);
+        const aptoNorm = (r.apto !== undefined && r.apto !== null ? String(r.apto) : '').trim();
+        const key = `${torreNorm.toLowerCase()}_${aptoNorm.toLowerCase()}`;
+        if (!residentesPorUnidad.has(key)) {
+          residentesPorUnidad.set(key, []);
+        }
+        const resItem = {
+          nombreCompleto: r.nombreCompleto.trim(),
+          documento: r.documento?.trim() || undefined,
+          condicion: r.condicion?.toLowerCase().includes('prop')
+            ? 'propietario'
+            : r.condicion?.toLowerCase().includes('arrend')
+              ? 'arrendatario'
+              : 'conviviente',
+          esContactoPrincipal: Boolean(r.esContactoPrincipal),
+          fechaNacimiento: r.fechaNacimiento,
+          telefono: r.telefono?.trim() || undefined,
+          email: r.email?.trim() || undefined,
+        };
+        residentesPorUnidad.get(key)!.push(resItem);
+        if (r.identificador) {
+          const idKey = r.identificador.trim().toLowerCase();
+          if (!residentesPorUnidad.has(idKey)) residentesPorUnidad.set(idKey, []);
+          residentesPorUnidad.get(idKey)!.push(resItem);
+        }
+      }
+    }
+
+    // Mapear mascotas por clave "torre_apto" o "identificador"
+    const mascotasPorUnidad = new Map<string, any[]>();
+    if (dto.mascotas && Array.isArray(dto.mascotas)) {
+      for (const m of dto.mascotas) {
+        const torreNorm = normalizarTorre(m.torre);
+        const aptoNorm = (m.apto !== undefined && m.apto !== null ? String(m.apto) : '').trim();
+        const key = `${torreNorm.toLowerCase()}_${aptoNorm.toLowerCase()}`;
+        if (!mascotasPorUnidad.has(key)) {
+          mascotasPorUnidad.set(key, []);
+        }
+        const masItem = {
+          tipo: m.tipo.trim(),
+          nombre: m.nombre.trim(),
+          raza: m.raza?.trim() || undefined,
+          esPeligroso: Boolean(m.esPeligroso),
+          vacunasAlDia: m.vacunasAlDia !== undefined ? Boolean(m.vacunasAlDia) : true,
+          observaciones: m.observaciones?.trim() || undefined,
+        };
+        mascotasPorUnidad.get(key)!.push(masItem);
+        if (m.identificador) {
+          const idKey = m.identificador.trim().toLowerCase();
+          if (!mascotasPorUnidad.has(idKey)) mascotasPorUnidad.set(idKey, []);
+          mascotasPorUnidad.get(idKey)!.push(masItem);
+        }
+      }
+    }
+
+    // Mapear vehiculos por clave "torre_apto" o "identificador"
+    const vehiculosPorUnidad = new Map<string, any[]>();
+    if (dto.vehiculos && Array.isArray(dto.vehiculos)) {
+      for (const v of dto.vehiculos) {
+        const torreNorm = normalizarTorre(v.torre);
+        const aptoNorm = (v.apto !== undefined && v.apto !== null ? String(v.apto) : '').trim();
+        const key = `${torreNorm.toLowerCase()}_${aptoNorm.toLowerCase()}`;
+        if (!vehiculosPorUnidad.has(key)) {
+          vehiculosPorUnidad.set(key, []);
+        }
+        const vehItem = {
+          tipo: v.tipo.trim(),
+          placa: v.placa?.trim().toUpperCase() || undefined,
+          marca: v.marca?.trim() || undefined,
+          modelo: v.modelo?.trim() || undefined,
+          color: v.color?.trim() || undefined,
+          parqueaEnEdificio: Boolean(v.parqueaEnEdificio),
+          numeroParqueadero: v.numeroParqueadero?.trim() || undefined,
+        };
+        vehiculosPorUnidad.get(key)!.push(vehItem);
+        if (v.identificador) {
+          const idKey = v.identificador.trim().toLowerCase();
+          if (!vehiculosPorUnidad.has(idKey)) vehiculosPorUnidad.set(idKey, []);
+          vehiculosPorUnidad.get(idKey)!.push(vehItem);
+        }
+      }
+    }
+
     let inmueblesCreados = 0;
     let inmueblesActualizados = 0;
 
@@ -490,6 +577,13 @@ export class CensoService {
       const unitKey = `${torre.toLowerCase()}_${numeroApto.toLowerCase()}`;
       const parqueaderosAsignados = parqueaderosPorUnidad.get(unitKey) || [];
       const bodegasAsignadas = bodegasPorUnidad.get(unitKey) || [];
+      const personasAsignadas = residentesPorUnidad.get(unitKey) || residentesPorUnidad.get(identificador.toLowerCase()) || [];
+      const mascotasAsignadas = mascotasPorUnidad.get(unitKey) || mascotasPorUnidad.get(identificador.toLowerCase()) || [];
+      const vehiculosAsignados = vehiculosPorUnidad.get(unitKey) || vehiculosPorUnidad.get(identificador.toLowerCase()) || [];
+
+      if (personasAsignadas.length > 0 || vehiculosAsignados.length > 0) {
+        this.validarPersonasYVehiculos({ personas: personasAsignadas, vehiculos: vehiculosAsignados });
+      }
 
       // Buscar si ya existe la unidad por torre+apto o por identificador
       const orConditions: any[] = [{ identificador: new RegExp(`^${identificador}$`, 'i') }];
@@ -520,6 +614,9 @@ export class CensoService {
         if (item.tipoOcupacion) existente.tipoOcupacion = item.tipoOcupacion as any;
         if (parqueaderosAsignados.length > 0) existente.parqueaderosAsignados = parqueaderosAsignados;
         if (bodegasAsignadas.length > 0) existente.bodegasAsignadas = bodegasAsignadas;
+        if (personasAsignadas.length > 0) existente.personas = personasAsignadas;
+        if (mascotasAsignadas.length > 0) existente.mascotas = mascotasAsignadas;
+        if (vehiculosAsignados.length > 0) existente.vehiculos = vehiculosAsignados;
 
         await existente.save();
         inmueblesActualizados++;
@@ -539,9 +636,9 @@ export class CensoService {
           tipoOcupacion: (item.tipoOcupacion as any) || 'habitada',
           parqueaderosAsignados,
           bodegasAsignadas,
-          personas: [],
-          mascotas: [],
-          vehiculos: [],
+          personas: personasAsignadas,
+          mascotas: mascotasAsignadas,
+          vehiculos: vehiculosAsignados,
           estado: 'aprobado',
         });
         await nuevaUnidad.save();
@@ -556,6 +653,9 @@ export class CensoService {
       totalInmuebles: dto.inmuebles.length,
       parqueaderosProcesados: dto.parqueaderos?.length || 0,
       bodegasProcesadas: dto.bodegas?.length || 0,
+      residentesProcesados: dto.residentes?.length || 0,
+      mascotasProcesadas: dto.mascotas?.length || 0,
+      vehiculosProcesados: dto.vehiculos?.length || 0,
     };
   }
 

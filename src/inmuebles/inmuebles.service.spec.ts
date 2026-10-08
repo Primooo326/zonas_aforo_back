@@ -25,40 +25,35 @@ describe('InmueblesService', () => {
   };
 
   beforeEach(async () => {
+    const queryMock = {
+      populate: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([mockInmueble]),
+    };
+
     const mockModel: any = {
       create: jest.fn().mockImplementation((dto) => Promise.resolve({ ...dto, _id: new Types.ObjectId() })),
-      find: jest.fn().mockReturnValue({
-        sort: jest.fn().mockReturnValue({
-          lean: jest.fn().mockResolvedValue([mockInmueble]),
-        }),
-      }),
-      findById: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue(mockInmueble),
+      find: jest.fn().mockReturnValue(queryMock),
+      findById: jest.fn().mockImplementation((id: string) => {
+        const doc = id === inmuebleId ? mockInmueble : null;
+        return {
+          populate: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue(doc),
+          }),
+          lean: jest.fn().mockResolvedValue(doc),
+          then: (resolve: any) => Promise.resolve(doc).then(resolve),
+        };
       }),
       findByIdAndUpdate: jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({ ...mockInmueble, precio: 200000 }),
+        }),
         lean: jest.fn().mockResolvedValue({ ...mockInmueble, precio: 200000 }),
       }),
       findByIdAndDelete: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue(mockInmueble),
       }),
     };
-    // Para validarPropietario que usa findById sin lean chain alternativo
-    mockModel.findById = jest.fn().mockImplementation((id) => {
-      if (id === inmuebleId) {
-        return Promise.resolve(mockInmueble) as any;
-      }
-      return Promise.resolve(null) as any;
-    });
-    // Necesitamos que findById pueda ser usado tanto como promise como con .lean()
-    // Ajustamos para soportar ambos patrones
-    const originalFindById = mockModel.findById;
-    mockModel.findById = jest.fn().mockImplementation((id: string) => {
-      const doc = id === inmuebleId ? mockInmueble : null;
-      const result: any = Promise.resolve(doc);
-      result.lean = jest.fn().mockResolvedValue(doc);
-      // Hacer que el promise también tenga lean para compatibilidad
-      return result;
-    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -145,6 +140,9 @@ describe('InmueblesService', () => {
   describe('findOne', () => {
     it('debe retornar inmueble por id', async () => {
       model.findById = jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue(mockInmueble),
+        }),
         lean: jest.fn().mockResolvedValue(mockInmueble),
       });
       const result = await service.findOne(inmuebleId);
@@ -157,6 +155,9 @@ describe('InmueblesService', () => {
 
     it('debe lanzar NotFound si no existe', async () => {
       model.findById = jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue(null),
+        }),
         lean: jest.fn().mockResolvedValue(null),
       });
       await expect(service.findOne(new Types.ObjectId().toString())).rejects.toThrow(

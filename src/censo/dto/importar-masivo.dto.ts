@@ -95,6 +95,122 @@ export class ImportarBodegaItemDto {
   metrosCuadrados?: number;
 }
 
+export class ImportarResidenteItemDto {
+  @IsOptional()
+  @IsString()
+  torre?: string;
+
+  @IsOptional()
+  @IsString()
+  apto?: string;
+
+  @IsOptional()
+  @IsString()
+  identificador?: string;
+
+  @IsString()
+  nombreCompleto: string;
+
+  @IsOptional()
+  @IsString()
+  documento?: string;
+
+  @IsString()
+  condicion: string;
+
+  @IsOptional()
+  @IsBoolean()
+  esContactoPrincipal?: boolean;
+
+  @IsString()
+  fechaNacimiento: string;
+
+  @IsOptional()
+  @IsString()
+  telefono?: string;
+
+  @IsOptional()
+  @IsString()
+  email?: string;
+}
+
+export class ImportarMascotaItemDto {
+  @IsOptional()
+  @IsString()
+  torre?: string;
+
+  @IsOptional()
+  @IsString()
+  apto?: string;
+
+  @IsOptional()
+  @IsString()
+  identificador?: string;
+
+  @IsString()
+  tipo: string;
+
+  @IsString()
+  nombre: string;
+
+  @IsOptional()
+  @IsString()
+  raza?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  esPeligroso?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  vacunasAlDia?: boolean;
+
+  @IsOptional()
+  @IsString()
+  observaciones?: string;
+}
+
+export class ImportarVehiculoItemDto {
+  @IsOptional()
+  @IsString()
+  torre?: string;
+
+  @IsOptional()
+  @IsString()
+  apto?: string;
+
+  @IsOptional()
+  @IsString()
+  identificador?: string;
+
+  @IsString()
+  tipo: string;
+
+  @IsOptional()
+  @IsString()
+  placa?: string;
+
+  @IsOptional()
+  @IsString()
+  marca?: string;
+
+  @IsOptional()
+  @IsString()
+  modelo?: string;
+
+  @IsOptional()
+  @IsString()
+  color?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  parqueaEnEdificio?: boolean;
+
+  @IsOptional()
+  @IsString()
+  numeroParqueadero?: string;
+}
+
 export class ImportarMasivoDto {
   @IsArray()
   @ValidateNested({ each: true })
@@ -112,4 +228,22 @@ export class ImportarMasivoDto {
   @ValidateNested({ each: true })
   @Type(() => ImportarBodegaItemDto)
   bodegas?: ImportarBodegaItemDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ImportarResidenteItemDto)
+  residentes?: ImportarResidenteItemDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ImportarMascotaItemDto)
+  mascotas?: ImportarMascotaItemDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ImportarVehiculoItemDto)
+  vehiculos?: ImportarVehiculoItemDto[];
 }
