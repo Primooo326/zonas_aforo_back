@@ -392,84 +392,102 @@ export class CensoService {
       return s;
     };
 
-    // Mapear parqueaderos por clave "torre_apto"
+    // Mapear parqueaderos por clave "torre_apto" y acumular bulkWrite
     const parqueaderosPorUnidad = new Map<string, Array<{ numero: string; tipo: string; esCubierto: boolean }>>();
+    const parqBulkOps: any[] = [];
     if (dto.parqueaderos && Array.isArray(dto.parqueaderos)) {
       for (const p of dto.parqueaderos) {
         const torreNorm = normalizarTorre(p.torreAsignada);
         const aptoNorm = (p.aptoAsignado !== undefined && p.aptoAsignado !== null ? String(p.aptoAsignado) : '').trim();
         const key = `${torreNorm.toLowerCase()}_${aptoNorm.toLowerCase()}`;
+        const rawTipo = (p.tipo || 'carro').trim().toLowerCase();
+        const tipoParq = rawTipo.includes('moto') ? 'moto' : rawTipo.includes('bici') ? 'bicicleta' : 'carro';
+        const numParq = p.numeroParqueadero.trim().toUpperCase();
+
         if (!parqueaderosPorUnidad.has(key)) {
           parqueaderosPorUnidad.set(key, []);
         }
         parqueaderosPorUnidad.get(key)!.push({
-          numero: p.numeroParqueadero.trim(),
-          tipo: p.tipo || 'carro',
+          numero: numParq,
+          tipo: tipoParq,
           esCubierto: p.esCubierto !== undefined ? p.esCubierto : true,
         });
 
-        // Registrar o actualizar en el inventario global de parqueaderos
         const parqFilter: Record<string, any> = {
           edificioId: edificioObjId,
-          numero: p.numeroParqueadero.trim().toUpperCase(),
+          numero: numParq,
         };
         if (torreNorm) {
           parqFilter.torreAsignada = torreNorm;
         }
 
-        await this.parqueaderoModel.findOneAndUpdate(
-          parqFilter,
-          {
-            $set: {
-              tipo: p.tipo || 'carro',
-              esVisitante: Boolean(p.esVisitante),
-              esCubierto: p.esCubierto !== undefined ? p.esCubierto : true,
-              torreAsignada: torreNorm || undefined,
-              aptoAsignado: aptoNorm || undefined,
+        parqBulkOps.push({
+          updateOne: {
+            filter: parqFilter,
+            update: {
+              $set: {
+                tipo: tipoParq,
+                esVisitante: Boolean(p.esVisitante),
+                esCubierto: p.esCubierto !== undefined ? p.esCubierto : true,
+                torreAsignada: torreNorm || undefined,
+                aptoAsignado: aptoNorm || undefined,
+              },
             },
+            upsert: true,
           },
-          { upsert: true, new: true },
-        );
+        });
+      }
+
+      if (parqBulkOps.length > 0) {
+        await this.parqueaderoModel.bulkWrite(parqBulkOps);
       }
     }
 
-    // Mapear bodegas por clave "torre_apto"
+    // Mapear bodegas por clave "torre_apto" y acumular bulkWrite
     const bodegasPorUnidad = new Map<string, Array<{ numero: string; ubicacion?: string; metrosCuadrados?: number }>>();
+    const bodegaBulkOps: any[] = [];
     if (dto.bodegas && Array.isArray(dto.bodegas)) {
       for (const b of dto.bodegas) {
         const torreNorm = normalizarTorre(b.torreAsignada);
         const aptoNorm = (b.aptoAsignado !== undefined && b.aptoAsignado !== null ? String(b.aptoAsignado) : '').trim();
         const key = `${torreNorm.toLowerCase()}_${aptoNorm.toLowerCase()}`;
+        const numBodega = b.numeroBodega.trim().toUpperCase();
+
         if (!bodegasPorUnidad.has(key)) {
           bodegasPorUnidad.set(key, []);
         }
         bodegasPorUnidad.get(key)!.push({
-          numero: b.numeroBodega.trim(),
+          numero: numBodega,
           ubicacion: b.ubicacion?.trim(),
           metrosCuadrados: b.metrosCuadrados,
         });
 
-        // Registrar o actualizar en el inventario global de bodegas
         const bodegaFilter: Record<string, any> = {
           edificioId: edificioObjId,
-          numero: b.numeroBodega.trim().toUpperCase(),
+          numero: numBodega,
         };
         if (torreNorm) {
           bodegaFilter.torreAsignada = torreNorm;
         }
 
-        await this.bodegaModel.findOneAndUpdate(
-          bodegaFilter,
-          {
-            $set: {
-              ubicacion: b.ubicacion?.trim(),
-              metrosCuadrados: b.metrosCuadrados,
-              torreAsignada: torreNorm || undefined,
-              aptoAsignado: aptoNorm || undefined,
+        bodegaBulkOps.push({
+          updateOne: {
+            filter: bodegaFilter,
+            update: {
+              $set: {
+                ubicacion: b.ubicacion?.trim(),
+                metrosCuadrados: b.metrosCuadrados,
+                torreAsignada: torreNorm || undefined,
+                aptoAsignado: aptoNorm || undefined,
+              },
             },
+            upsert: true,
           },
-          { upsert: true, new: true },
-        );
+        });
+      }
+
+      if (bodegaBulkOps.length > 0) {
+        await this.bodegaModel.bulkWrite(bodegaBulkOps);
       }
     }
 
@@ -483,6 +501,16 @@ export class CensoService {
         if (!residentesPorUnidad.has(key)) {
           residentesPorUnidad.set(key, []);
         }
+
+        let fechaNac = r.fechaNacimiento;
+        if (typeof fechaNac === 'string') {
+          const matchDMY = fechaNac.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+          if (matchDMY) {
+            const [, d, mStr, y] = matchDMY;
+            fechaNac = `${y}-${mStr.padStart(2, '0')}-${d.padStart(2, '0')}`;
+          }
+        }
+
         const resItem = {
           nombreCompleto: r.nombreCompleto.trim(),
           documento: r.documento?.trim() || undefined,
@@ -492,7 +520,7 @@ export class CensoService {
               ? 'arrendatario'
               : 'conviviente',
           esContactoPrincipal: Boolean(r.esContactoPrincipal),
-          fechaNacimiento: r.fechaNacimiento,
+          fechaNacimiento: fechaNac,
           telefono: r.telefono?.trim() || undefined,
           email: r.email?.trim() || undefined,
         };
@@ -505,7 +533,7 @@ export class CensoService {
       }
     }
 
-    // Mapear mascotas por clave "torre_apto" o "identificador"
+    // Mapear mascotas por clave "torre_apto" o "identificador" con enum normalizado
     const mascotasPorUnidad = new Map<string, any[]>();
     if (dto.mascotas && Array.isArray(dto.mascotas)) {
       for (const m of dto.mascotas) {
@@ -515,10 +543,18 @@ export class CensoService {
         if (!mascotasPorUnidad.has(key)) {
           mascotasPorUnidad.set(key, []);
         }
+
+        const rawTipo = (m.tipo || '').trim().toLowerCase();
+        const tipoMascota = rawTipo.includes('gato') || rawTipo.includes('felin')
+          ? 'gato'
+          : rawTipo.includes('perr') || rawTipo.includes('can')
+            ? 'perro'
+            : (['perro', 'gato', 'otro'].includes(rawTipo) ? rawTipo : 'otro');
+
         const masItem = {
-          tipo: m.tipo.trim(),
+          tipo: tipoMascota,
           nombre: m.nombre.trim(),
-          raza: m.raza?.trim() || undefined,
+          raza: m.raza?.trim() || 'Mestizo / No especificada',
           esPeligroso: Boolean(m.esPeligroso),
           vacunasAlDia: m.vacunasAlDia !== undefined ? Boolean(m.vacunasAlDia) : true,
           observaciones: m.observaciones?.trim() || undefined,
@@ -532,7 +568,7 @@ export class CensoService {
       }
     }
 
-    // Mapear vehiculos por clave "torre_apto" o "identificador"
+    // Mapear vehículos por clave "torre_apto" o "identificador" con enum normalizado
     const vehiculosPorUnidad = new Map<string, any[]>();
     if (dto.vehiculos && Array.isArray(dto.vehiculos)) {
       for (const v of dto.vehiculos) {
@@ -542,9 +578,24 @@ export class CensoService {
         if (!vehiculosPorUnidad.has(key)) {
           vehiculosPorUnidad.set(key, []);
         }
+
+        const rawTipo = (v.tipo || '').trim().toLowerCase();
+        const tipoVehiculo = rawTipo.includes('moto')
+          ? 'moto'
+          : rawTipo.includes('bici')
+            ? 'bicicleta'
+            : (rawTipo.includes('carr') || rawTipo.includes('auto'))
+              ? 'carro'
+              : (['carro', 'moto', 'bicicleta', 'otro'].includes(rawTipo) ? rawTipo : 'otro');
+
+        let placa = v.placa?.trim().toUpperCase().replace(/[\s\-]/g, '');
+        if (!placa && tipoVehiculo === 'bicicleta') {
+          placa = 'BIC-SN';
+        }
+
         const vehItem = {
-          tipo: v.tipo.trim(),
-          placa: v.placa?.trim().toUpperCase() || undefined,
+          tipo: tipoVehiculo,
+          placa: placa || undefined,
           marca: v.marca?.trim() || undefined,
           modelo: v.modelo?.trim() || undefined,
           color: v.color?.trim() || undefined,
@@ -560,8 +611,24 @@ export class CensoService {
       }
     }
 
+    // Pre-cargar unidades existentes para evitar consultas individuales masivas
+    const unidadesExistentes = await this.censoModel.find({ edificioId: edificioObjId }).lean();
+    const idMap = new Map<string, Types.ObjectId>();
+    const torreAptoMap = new Map<string, Types.ObjectId>();
+    const aptoOnlyMap = new Map<string, Types.ObjectId>();
+
+    for (const u of unidadesExistentes) {
+      if (u.identificador) idMap.set(u.identificador.trim().toLowerCase(), u._id);
+      if (u.torre && u.numeroApto) {
+        torreAptoMap.set(`${normalizarTorre(u.torre).toLowerCase()}:::${String(u.numeroApto).trim().toLowerCase()}`, u._id);
+      } else if (u.numeroApto) {
+        aptoOnlyMap.set(String(u.numeroApto).trim().toLowerCase(), u._id);
+      }
+    }
+
     let inmueblesCreados = 0;
     let inmueblesActualizados = 0;
+    const censoBulkOps: any[] = [];
 
     for (const item of dto.inmuebles) {
       const numeroApto = (item.numeroApto !== undefined && item.numeroApto !== null ? String(item.numeroApto) : '').trim();
@@ -585,65 +652,85 @@ export class CensoService {
         this.validarPersonasYVehiculos({ personas: personasAsignadas, vehiculos: vehiculosAsignados });
       }
 
-      // Buscar si ya existe la unidad por torre+apto o por identificador
-      const orConditions: any[] = [{ identificador: new RegExp(`^${identificador}$`, 'i') }];
-      if (torre) {
-        orConditions.push({
-          torre: new RegExp(`^${torre}$`, 'i'),
-          numeroApto: new RegExp(`^${numeroApto}$`, 'i'),
-        });
-      } else {
-        orConditions.push({
-          numeroApto: new RegExp(`^${numeroApto}$`, 'i'),
-        });
+      const idKey = identificador.toLowerCase();
+      const torreAptoKey = `${torre.toLowerCase()}:::${numeroApto.toLowerCase()}`;
+      const aptoKey = numeroApto.toLowerCase();
+
+      let existingId: Types.ObjectId | undefined = undefined;
+      if (idMap.has(idKey)) {
+        existingId = idMap.get(idKey);
+      } else if (torre && torreAptoMap.has(torreAptoKey)) {
+        existingId = torreAptoMap.get(torreAptoKey);
+      } else if (!torre && aptoOnlyMap.has(aptoKey)) {
+        existingId = aptoOnlyMap.get(aptoKey);
       }
 
-      const existente = await this.censoModel.findOne({
-        edificioId: edificioObjId,
-        $or: orConditions,
-      });
+      const rawOcup = (item.tipoOcupacion || '').trim().toLowerCase();
+      const tipoOcupacion = rawOcup.includes('desoc') ? 'desocupada' : 'habitada';
 
-      if (existente) {
-        if (item.piso !== undefined) existente.piso = item.piso;
-        if (item.cuartos !== undefined) existente.cuartos = item.cuartos;
-        if (item.banos !== undefined) existente.banos = item.banos;
-        if (item.tieneBalcon !== undefined) existente.tieneBalcon = item.tieneBalcon;
-        if (item.metrosCuadrados !== undefined) existente.metrosCuadrados = item.metrosCuadrados;
-        if (item.tienePatio !== undefined) existente.tienePatio = item.tienePatio;
-        if (item.coeficiente !== undefined) existente.coeficiente = item.coeficiente;
-        if (item.tipoOcupacion) existente.tipoOcupacion = item.tipoOcupacion as any;
-        if (parqueaderosAsignados.length > 0) existente.parqueaderosAsignados = parqueaderosAsignados;
-        if (bodegasAsignadas.length > 0) existente.bodegasAsignadas = bodegasAsignadas;
-        if (personasAsignadas.length > 0) existente.personas = personasAsignadas;
-        if (mascotasAsignadas.length > 0) existente.mascotas = mascotasAsignadas;
-        if (vehiculosAsignados.length > 0) existente.vehiculos = vehiculosAsignados;
+      if (existingId) {
+        const updateFields: Record<string, any> = {
+          identificador,
+          numeroApto,
+          tipoOcupacion,
+        };
+        if (torre) updateFields.torre = torre;
+        if (item.piso !== undefined) updateFields.piso = item.piso;
+        if (item.cuartos !== undefined) updateFields.cuartos = item.cuartos;
+        if (item.banos !== undefined) updateFields.banos = item.banos;
+        if (item.tieneBalcon !== undefined) updateFields.tieneBalcon = item.tieneBalcon;
+        if (item.metrosCuadrados !== undefined) updateFields.metrosCuadrados = item.metrosCuadrados;
+        if (item.tienePatio !== undefined) updateFields.tienePatio = item.tienePatio;
+        if (item.coeficiente !== undefined) updateFields.coeficiente = item.coeficiente;
+        if (parqueaderosAsignados.length > 0) updateFields.parqueaderosAsignados = parqueaderosAsignados;
+        if (bodegasAsignadas.length > 0) updateFields.bodegasAsignadas = bodegasAsignadas;
+        if (personasAsignadas.length > 0) updateFields.personas = personasAsignadas;
+        if (mascotasAsignadas.length > 0) updateFields.mascotas = mascotasAsignadas;
+        if (vehiculosAsignados.length > 0) updateFields.vehiculos = vehiculosAsignados;
 
-        await existente.save();
+        censoBulkOps.push({
+          updateOne: {
+            filter: { _id: existingId },
+            update: { $set: updateFields },
+          },
+        });
         inmueblesActualizados++;
       } else {
-        const nuevaUnidad = new this.censoModel({
-          edificioId: edificioObjId,
-          identificador,
-          torre: torre || undefined,
-          numeroApto,
-          piso: item.piso,
-          cuartos: item.cuartos,
-          banos: item.banos,
-          tieneBalcon: item.tieneBalcon || false,
-          metrosCuadrados: item.metrosCuadrados,
-          tienePatio: item.tienePatio || false,
-          coeficiente: item.coeficiente,
-          tipoOcupacion: (item.tipoOcupacion as any) || 'habitada',
-          parqueaderosAsignados,
-          bodegasAsignadas,
-          personas: personasAsignadas,
-          mascotas: mascotasAsignadas,
-          vehiculos: vehiculosAsignados,
-          estado: 'aprobado',
+        const newId = new Types.ObjectId();
+        censoBulkOps.push({
+          insertOne: {
+            document: {
+              _id: newId,
+              edificioId: edificioObjId,
+              identificador,
+              torre: torre || undefined,
+              numeroApto,
+              piso: item.piso,
+              cuartos: item.cuartos,
+              banos: item.banos,
+              tieneBalcon: item.tieneBalcon || false,
+              metrosCuadrados: item.metrosCuadrados,
+              tienePatio: item.tienePatio || false,
+              coeficiente: item.coeficiente,
+              tipoOcupacion,
+              parqueaderosAsignados,
+              bodegasAsignadas,
+              personas: personasAsignadas,
+              mascotas: mascotasAsignadas,
+              vehiculos: vehiculosAsignados,
+              estado: 'aprobado',
+            },
+          },
         });
-        await nuevaUnidad.save();
+        idMap.set(idKey, newId);
+        if (torre) torreAptoMap.set(torreAptoKey, newId);
+        else aptoOnlyMap.set(aptoKey, newId);
         inmueblesCreados++;
       }
+    }
+
+    if (censoBulkOps.length > 0) {
+      await this.censoModel.bulkWrite(censoBulkOps);
     }
 
     return {
