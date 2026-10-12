@@ -210,4 +210,20 @@ export class InmueblesController {
     const propietarioId = user.role === 'propietario' ? user.id : undefined;
     return this.inmueblesService.updateEstado(id, estado, edificioId, propietarioId);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('inmuebles/:id/aprobar')
+  aprobar(@Param('id') id: string, @Request() req) {
+    const user = req.user;
+    const edificioId = user.edificioId || user.id;
+    return this.inmueblesService.aprobar(id, edificioId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('inmuebles/:id/rechazar')
+  rechazar(@Param('id') id: string, @Request() req) {
+    const user = req.user;
+    const edificioId = user.edificioId || user.id;
+    return this.inmueblesService.rechazar(id, edificioId);
+  }
 }

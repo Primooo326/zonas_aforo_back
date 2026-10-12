@@ -33,4 +33,14 @@ export class CreateReservaDto {
   @IsOptional()
   @IsString()
   telefonoContacto?: string;
+
+  @IsOptional()
+  edadSolicitante?: number;
+
+  @IsOptional()
+  esReservaAdmin?: boolean;
+
+  @IsOptional()
+  @IsString()
+  motivoAdmin?: string;
 }

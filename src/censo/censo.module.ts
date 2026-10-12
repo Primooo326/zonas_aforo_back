@@ -7,6 +7,8 @@ import {
   ParqueaderoInventarioSchema,
   BodegaInventario,
   BodegaInventarioSchema,
+  InvitacionCenso,
+  InvitacionCensoSchema,
 } from './censo.schema';
 import { CensoController } from './censo.controller';
 import { CensoService } from './censo.service';
@@ -17,6 +19,7 @@ import { CensoService } from './censo.service';
       { name: CensoUnidad.name, schema: CensoUnidadSchema },
       { name: ParqueaderoInventario.name, schema: ParqueaderoInventarioSchema },
       { name: BodegaInventario.name, schema: BodegaInventarioSchema },
+      { name: InvitacionCenso.name, schema: InvitacionCensoSchema },
     ]),
   ],
   controllers: [CensoController],

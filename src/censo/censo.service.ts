@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { randomBytes } from 'crypto';
 import {
   CensoUnidad,
   CensoUnidadDocument,
@@ -13,6 +14,8 @@ import {
   ParqueaderoInventarioDocument,
   BodegaInventario,
   BodegaInventarioDocument,
+  InvitacionCenso,
+  InvitacionCensoDocument,
 } from './censo.schema';
 import { CreateCensoDto } from './dto/create-censo.dto';
 import { UpdateCensoDto } from './dto/update-censo.dto';
@@ -57,6 +60,8 @@ export class CensoService {
     private readonly parqueaderoModel: Model<ParqueaderoInventarioDocument>,
     @InjectModel(BodegaInventario.name)
     private readonly bodegaModel: Model<BodegaInventarioDocument>,
+    @InjectModel(InvitacionCenso.name)
+    private readonly invitacionModel: Model<InvitacionCensoDocument>,
   ) {}
 
   private validarPersonasYVehiculos(dto: { personas?: any[]; vehiculos?: any[] }) {
@@ -790,5 +795,75 @@ export class CensoService {
     await this.parqueaderoModel.deleteMany({ edificioId: edificioObjId });
     await this.bodegaModel.deleteMany({ edificioId: edificioObjId });
     return { success: true, message: 'Inventario y censo del edificio reseteados con éxito' };
+  }
+
+  async crearInvitacion(
+    edificioId: string,
+    diasValidez = 7,
+    inmueblePredefinido?: string,
+    creadoPor?: string,
+  ) {
+    const token = randomBytes(24).toString('hex');
+    const expiraEn = new Date(Date.now() + (diasValidez || 7) * 24 * 60 * 60 * 1000);
+    const invitacion = new this.invitacionModel({
+      edificioId: new Types.ObjectId(edificioId),
+      token,
+      expiraEn,
+      inmueblePredefinido,
+      creadoPor,
+    });
+    await invitacion.save();
+    return {
+      token,
+      expiraEn,
+      diasValidez: diasValidez || 7,
+      inmueblePredefinido,
+    };
+  }
+
+  async getInvitaciones(edificioId: string) {
+    return this.invitacionModel
+      .find({ edificioId: new Types.ObjectId(edificioId) })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .exec();
+  }
+
+  async validarInvitacion(token: string) {
+    const inv = await this.invitacionModel
+      .findOne({ token })
+      .populate('edificioId', 'nombre direccion telefono')
+      .exec();
+    if (!inv) {
+      throw new NotFoundException('Enlace de invitación inválido o no encontrado');
+    }
+    if (new Date() > new Date(inv.expiraEn)) {
+      throw new BadRequestException('El enlace de invitación al censo ha expirado. Por favor solicita uno nuevo.');
+    }
+    return inv;
+  }
+
+  async responderInvitacion(token: string, dto: PublicCensoDto) {
+    const inv = await this.validarInvitacion(token);
+    const edificioId = (inv.edificioId as any)._id?.toString() || inv.edificioId.toString();
+    const res = await this.createFromPublic(edificioId, dto);
+    inv.utilizado = true;
+    await inv.save();
+    return res;
+  }
+
+  async actualizarTags(id: string, edificioId: string, tags: string[]) {
+    const censo = await this.censoModel.findOneAndUpdate(
+      {
+        _id: new Types.ObjectId(id),
+        edificioId: new Types.ObjectId(edificioId),
+      },
+      { $set: { tags: tags || [] } },
+      { new: true },
+    );
+    if (!censo) {
+      throw new NotFoundException('Unidad de censo no encontrada');
+    }
+    return censo;
   }
 }

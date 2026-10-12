@@ -40,6 +40,21 @@ export class Reserva {
 
   @Prop({ default: 'activa' })
   estado: string;
+
+  @Prop({ default: false })
+  esReservaAdmin?: boolean;
+
+  @Prop()
+  motivoAdmin?: string;
+
+  @Prop()
+  motivoRechazo?: string;
+
+  @Prop()
+  edadSolicitante?: number;
+
+  @Prop({ type: Types.ObjectId, ref: 'Residente', required: false })
+  residenteId?: Types.ObjectId;
 }
 
 export const ReservaSchema = SchemaFactory.createForClass(Reserva);

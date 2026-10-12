@@ -27,4 +27,11 @@ export class CreateSolicitudDto {
   @IsOptional()
   @IsString()
   telefonoContacto?: string;
+
+  @IsOptional()
+  edadSolicitante?: number;
+
+  @IsOptional()
+  @IsString()
+  fechaNacimiento?: string;
 }

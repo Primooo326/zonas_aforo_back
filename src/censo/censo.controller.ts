@@ -152,6 +152,39 @@ export class CensoController {
     return this.censoService.rechazar(id, edificioId);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/tags')
+  async actualizarTags(
+    @Param('id') id: string,
+    @Body('tags') tags: string[],
+    @Request() req: { user: AuthenticatedUser },
+  ) {
+    const edificioId = this.getEdificioId(req);
+    return this.censoService.actualizarTags(id, edificioId, tags);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('invitaciones')
+  async crearInvitacion(
+    @Body() body: { diasValidez?: number; inmueblePredefinido?: string },
+    @Request() req: { user: AuthenticatedUser },
+  ) {
+    const edificioId = this.getEdificioId(req);
+    return this.censoService.crearInvitacion(
+      edificioId,
+      body?.diasValidez || 7,
+      body?.inmueblePredefinido,
+      req.user?.id || req.user?.sub,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('invitaciones')
+  async getInvitaciones(@Request() req: { user: AuthenticatedUser }) {
+    const edificioId = this.getEdificioId(req);
+    return this.censoService.getInvitaciones(edificioId);
+  }
+
   // --- Endpoints Públicos para Residentes ---
 
   @Get('public/:edificioId/unidades')
@@ -165,5 +198,18 @@ export class CensoController {
     @Body() dto: PublicCensoDto,
   ) {
     return this.censoService.createFromPublic(edificioId, dto);
+  }
+
+  @Get('public/invitacion/:token')
+  async validarInvitacion(@Param('token') token: string) {
+    return this.censoService.validarInvitacion(token);
+  }
+
+  @Post('public/invitacion/:token')
+  async responderInvitacion(
+    @Param('token') token: string,
+    @Body() dto: PublicCensoDto,
+  ) {
+    return this.censoService.responderInvitacion(token, dto);
   }
 }

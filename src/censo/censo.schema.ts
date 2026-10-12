@@ -3,7 +3,7 @@ import { HydratedDocument, Types } from 'mongoose';
 
 export type CensoUnidadDocument = HydratedDocument<CensoUnidad> & { _id: Types.ObjectId };
 
-export const CONDICION_PERSONA = ['propietario', 'arrendatario', 'conviviente'] as const;
+export const CONDICION_PERSONA = ['propietario', 'arrendatario', 'habitante', 'visitante', 'conviviente'] as const;
 export type CondicionPersona = (typeof CONDICION_PERSONA)[number];
 
 export const TIPO_MASCOTA = ['perro', 'gato', 'otro'] as const;
@@ -40,6 +40,15 @@ export class PersonaCenso {
 
   @Prop({ default: false })
   esContactoPrincipal: boolean;
+
+  @Prop({ default: false })
+  discapacidad?: boolean;
+
+  @Prop({ trim: true })
+  condicionEspecial?: string;
+
+  @Prop({ trim: true })
+  adjuntoCedulaUrl?: string;
 }
 export const PersonaCensoSchema = SchemaFactory.createForClass(PersonaCenso);
 
@@ -57,11 +66,20 @@ export class MascotaCenso {
   @Prop({ default: false })
   esPeligroso: boolean;
 
+  @Prop({ default: false })
+  esManejoEspecial?: boolean;
+
   @Prop({ default: true })
   vacunasAlDia: boolean;
 
   @Prop({ trim: true })
   observaciones?: string;
+
+  @Prop({ trim: true })
+  adjuntoCarnetVacunacionUrl?: string;
+
+  @Prop({ trim: true })
+  adjuntoPolizaUrl?: string;
 }
 export const MascotaCensoSchema = SchemaFactory.createForClass(MascotaCenso);
 
@@ -87,6 +105,12 @@ export class VehiculoCenso {
 
   @Prop({ trim: true })
   numeroParqueadero?: string;
+
+  @Prop({ default: true })
+  esPropietarioResidente?: boolean;
+
+  @Prop({ trim: true })
+  adjuntoTarjetaPropiedadUrl?: string;
 }
 export const VehiculoCensoSchema = SchemaFactory.createForClass(VehiculoCenso);
 
@@ -178,6 +202,12 @@ export class CensoUnidad {
   unidadOriginalId?: Types.ObjectId;
 
   @Prop({ trim: true })
+  adjuntoCertificadoLibertadUrl?: string;
+
+  @Prop({ type: [String], default: [] })
+  tags?: string[];
+
+  @Prop({ trim: true })
   notasAdministracion?: string;
 }
 
@@ -186,6 +216,7 @@ export const CensoUnidadSchema = SchemaFactory.createForClass(CensoUnidad);
 CensoUnidadSchema.index({ edificioId: 1, identificador: 1 });
 CensoUnidadSchema.index({ edificioId: 1, torre: 1, numeroApto: 1 });
 CensoUnidadSchema.index({ edificioId: 1, estado: 1 });
+CensoUnidadSchema.index({ edificioId: 1, tags: 1 });
 CensoUnidadSchema.index({ edificioId: 1, 'vehiculos.placa': 1 });
 CensoUnidadSchema.index({ edificioId: 1, 'personas.nombreCompleto': 1 });
 
@@ -247,3 +278,32 @@ export class BodegaInventario {
 }
 export const BodegaInventarioSchema = SchemaFactory.createForClass(BodegaInventario);
 BodegaInventarioSchema.index({ edificioId: 1, numero: 1 });
+
+// Invitaciones seguras para el censo con token y caducidad
+export type InvitacionCensoDocument = HydratedDocument<InvitacionCenso> & { _id: Types.ObjectId };
+
+@Schema({ timestamps: true })
+export class InvitacionCenso {
+  _id?: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'Edificio', required: true, index: true })
+  edificioId: Types.ObjectId;
+
+  @Prop({ required: true, unique: true, index: true })
+  token: string;
+
+  @Prop({ required: true })
+  expiraEn: Date;
+
+  @Prop({ default: false })
+  utilizado: boolean;
+
+  @Prop({ trim: true })
+  inmueblePredefinido?: string;
+
+  @Prop({ trim: true })
+  creadoPor?: string;
+}
+export const InvitacionCensoSchema = SchemaFactory.createForClass(InvitacionCenso);
+InvitacionCensoSchema.index({ edificioId: 1, token: 1 });
+

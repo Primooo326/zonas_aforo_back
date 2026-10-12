@@ -49,6 +49,11 @@ export class InmueblesService {
     edificioId: string,
     propietarioId?: string,
   ) {
+    if ((dto as any).condicion === 'arrendatario' || (dto as any).tipoResidente === 'arrendatario') {
+      throw new BadRequestException(
+        'Solo los propietarios tienen autorización para ofertar en arriendo o venta inmuebles, parqueaderos o habitaciones.',
+      );
+    }
     this.validarCamposCondicionales(dto);
     const data: any = {
       ...dto,
@@ -159,5 +164,31 @@ export class InmueblesService {
       .lean();
     if (!actualizado) throw new NotFoundException('Inmueble no encontrado');
     return actualizado;
+  }
+
+  async aprobar(id: string, edificioId: string) {
+    const inmueble = await this.inmuebleModel.findOneAndUpdate(
+      {
+        _id: new Types.ObjectId(id),
+        edificioId: new Types.ObjectId(edificioId),
+      },
+      { $set: { estado: 'activa' } },
+      { new: true },
+    );
+    if (!inmueble) throw new NotFoundException('Inmueble no encontrado');
+    return inmueble;
+  }
+
+  async rechazar(id: string, edificioId: string) {
+    const inmueble = await this.inmuebleModel.findOneAndUpdate(
+      {
+        _id: new Types.ObjectId(id),
+        edificioId: new Types.ObjectId(edificioId),
+      },
+      { $set: { estado: 'rechazada' } },
+      { new: true },
+    );
+    if (!inmueble) throw new NotFoundException('Inmueble no encontrado');
+    return inmueble;
   }
 }

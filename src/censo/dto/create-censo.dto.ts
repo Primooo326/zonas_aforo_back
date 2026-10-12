@@ -46,6 +46,18 @@ export class PersonaCensoDto {
   @IsBoolean()
   @IsOptional()
   esContactoPrincipal?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  discapacidad?: boolean;
+
+  @IsString()
+  @IsOptional()
+  condicionEspecial?: string;
+
+  @IsString()
+  @IsOptional()
+  adjuntoCedulaUrl?: string;
 }
 
 export class MascotaCensoDto {
@@ -68,11 +80,23 @@ export class MascotaCensoDto {
 
   @IsBoolean()
   @IsOptional()
+  esManejoEspecial?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
   vacunasAlDia?: boolean;
 
   @IsString()
   @IsOptional()
   observaciones?: string;
+
+  @IsString()
+  @IsOptional()
+  adjuntoCarnetVacunacionUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  adjuntoPolizaUrl?: string;
 }
 
 export class VehiculoCensoDto {
@@ -104,6 +128,14 @@ export class VehiculoCensoDto {
   @IsString()
   @IsOptional()
   numeroParqueadero?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  esPropietarioResidente?: boolean;
+
+  @IsString()
+  @IsOptional()
+  adjuntoTarjetaPropiedadUrl?: string;
 }
 
 export class CreateCensoDto {
@@ -146,6 +178,14 @@ export class CreateCensoDto {
   @IsOptional()
   @IsIn([...ESTADO_CENSO] as string[])
   estado?: string;
+
+  @IsString()
+  @IsOptional()
+  adjuntoCertificadoLibertadUrl?: string;
+
+  @IsArray()
+  @IsOptional()
+  tags?: string[];
 
   @IsString()
   @IsOptional()

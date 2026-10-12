@@ -29,6 +29,11 @@ export class ZonasController {
     return this.zonasService.findAll(req.user.id);
   }
 
+  @Get('plantillas/presets')
+  getPlantillas() {
+    return this.zonasService.getPlantillas();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.zonasService.findOne(id);
@@ -37,6 +42,27 @@ export class ZonasController {
   @Put(':id')
   update(@Param('id') id: string, @Body() dto: UpdateZonaDto, @Request() req) {
     return this.zonasService.update(id, dto, req.user.id);
+  }
+
+  @Put(':id/mantenimiento')
+  toggleMantenimiento(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      enMantenimiento: boolean;
+      motivo?: string;
+      fechaInicio?: string;
+      horaInicio?: string;
+      fechaFin?: string;
+      horaFin?: string;
+    },
+    @Request() req,
+  ) {
+    return this.zonasService.toggleMantenimiento(
+      id,
+      body,
+      req.user.id,
+    );
   }
 
   @Delete(':id')

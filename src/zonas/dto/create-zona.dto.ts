@@ -61,6 +61,38 @@ export class CreateZonaDto {
   lapsoMinutos: number;
 
   @IsOptional()
+  @IsString()
+  politicasUso?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imagenes?: string[];
+
+  @IsOptional()
+  enMantenimiento?: boolean;
+
+  @IsOptional()
+  @IsString()
+  motivoMantenimiento?: string;
+
+  @IsOptional()
+  @IsString()
+  mantenimientoFechaInicio?: string;
+
+  @IsOptional()
+  @IsString()
+  mantenimientoHoraInicio?: string;
+
+  @IsOptional()
+  @IsString()
+  mantenimientoFechaFin?: string;
+
+  @IsOptional()
+  @IsString()
+  mantenimientoHoraFin?: string;
+
+  @IsOptional()
   @IsMongoId()
   edificioId?: string;
 }

@@ -42,4 +42,8 @@ export class PublicCensoDto {
   @Type(() => VehiculoCensoDto)
   @IsOptional()
   vehiculos?: VehiculoCensoDto[];
+
+  @IsString()
+  @IsOptional()
+  adjuntoCertificadoLibertadUrl?: string;
 }

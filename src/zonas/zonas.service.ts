@@ -99,10 +99,118 @@ export class ZonasService {
     return zona;
   }
 
+  async toggleMantenimiento(
+    id: string,
+    params: {
+      enMantenimiento: boolean;
+      motivo?: string;
+      fechaInicio?: string;
+      horaInicio?: string;
+      fechaFin?: string;
+      horaFin?: string;
+    },
+    edificioId: string,
+  ) {
+    await this.validarPropietario(id, edificioId);
+    const updatePayload: any = {
+      enMantenimiento: params.enMantenimiento,
+      motivoMantenimiento: params.motivo || '',
+      mantenimientoFechaInicio: params.enMantenimiento ? (params.fechaInicio || '') : '',
+      mantenimientoHoraInicio: params.enMantenimiento ? (params.horaInicio || '') : '',
+      mantenimientoFechaFin: params.enMantenimiento ? (params.fechaFin || '') : '',
+      mantenimientoHoraFin: params.enMantenimiento ? (params.horaFin || '') : '',
+    };
+    const actualizada = await this.zonaModel
+      .findByIdAndUpdate(id, updatePayload, { new: true })
+      .lean();
+    if (!actualizada) throw new NotFoundException('Zona no encontrada');
+    return actualizada;
+  }
+
+  getPlantillas() {
+    return [
+      {
+        nombre: 'Salón Comunal / Social',
+        descripcion: 'Espacio para reuniones y eventos sociales de los residentes.',
+        politicasUso: 'Prohibido uso de pólvora o juegos pirotécnicos. Nivel moderado de música después de las 22:00. Entregar el salón aseado.',
+        aforoMaximo: 50,
+        lapsoMinutos: 240,
+        horarios: [
+          { dia: 'Lunes', inicio: '09:00', fin: '23:00' },
+          { dia: 'Martes', inicio: '09:00', fin: '23:00' },
+          { dia: 'Miércoles', inicio: '09:00', fin: '23:00' },
+          { dia: 'Jueves', inicio: '09:00', fin: '23:00' },
+          { dia: 'Viernes', inicio: '09:00', fin: '23:59' },
+          { dia: 'Sábado', inicio: '09:00', fin: '23:59' },
+          { dia: 'Domingo', inicio: '09:00', fin: '22:00' },
+        ],
+      },
+      {
+        nombre: 'Zona BBQ / Parrilla',
+        descripcion: 'Área al aire libre equipada con parrilla para asados familiares.',
+        politicasUso: 'Uso obligatorio de carbón. Dejar la parrilla limpia y cerciorarse de apagar las brasas por completo antes de retirarse.',
+        aforoMaximo: 15,
+        lapsoMinutos: 180,
+        horarios: [
+          { dia: 'Viernes', inicio: '11:00', fin: '21:00' },
+          { dia: 'Sábado', inicio: '10:00', fin: '21:00' },
+          { dia: 'Domingo', inicio: '10:00', fin: '20:00' },
+        ],
+      },
+      {
+        nombre: 'Piscina y Zonas Húmedas',
+        descripcion: 'Piscina para adultos y niños con duchas y vestieres.',
+        politicasUso: 'Ducha obligatoria antes de ingresar al agua. Menores de 12 años deben estar acompañados por un adulto responsable. Prohibido alimentos dentro del agua.',
+        aforoMaximo: 25,
+        lapsoMinutos: 120,
+        horarios: [
+          { dia: 'Martes', inicio: '08:00', fin: '18:00' },
+          { dia: 'Miércoles', inicio: '08:00', fin: '18:00' },
+          { dia: 'Jueves', inicio: '08:00', fin: '18:00' },
+          { dia: 'Viernes', inicio: '08:00', fin: '18:00' },
+          { dia: 'Sábado', inicio: '08:00', fin: '18:00' },
+          { dia: 'Domingo', inicio: '08:00', fin: '17:00' },
+        ],
+      },
+      {
+        nombre: 'Cancha Sintética / Múltiple',
+        descripcion: 'Cancha deportiva para microfútbol, baloncesto y voleibol.',
+        politicasUso: 'Uso de calzado deportivo adecuado. Prohibido el ingreso de envases de vidrio y bebidas alcohólicas.',
+        aforoMaximo: 14,
+        lapsoMinutos: 60,
+        horarios: [
+          { dia: 'Lunes', inicio: '06:00', fin: '22:00' },
+          { dia: 'Martes', inicio: '06:00', fin: '22:00' },
+          { dia: 'Miércoles', inicio: '06:00', fin: '22:00' },
+          { dia: 'Jueves', inicio: '06:00', fin: '22:00' },
+          { dia: 'Viernes', inicio: '06:00', fin: '22:00' },
+          { dia: 'Sábado', inicio: '07:00', fin: '22:00' },
+          { dia: 'Domingo', inicio: '07:00', fin: '20:00' },
+        ],
+      },
+      {
+        nombre: 'Gimnasio',
+        descripcion: 'Equipamiento de pesas, cardio y entrenamiento funcional.',
+        politicasUso: 'Uso obligatorio de toalla personal. Desinfectar las máquinas tras finalizar. Reorganizar discos y mancuernas en sus soportes.',
+        aforoMaximo: 12,
+        lapsoMinutos: 90,
+        horarios: [
+          { dia: 'Lunes', inicio: '05:00', fin: '22:00' },
+          { dia: 'Martes', inicio: '05:00', fin: '22:00' },
+          { dia: 'Miércoles', inicio: '05:00', fin: '22:00' },
+          { dia: 'Jueves', inicio: '05:00', fin: '22:00' },
+          { dia: 'Viernes', inicio: '05:00', fin: '22:00' },
+          { dia: 'Sábado', inicio: '06:00', fin: '20:00' },
+          { dia: 'Domingo', inicio: '07:00', fin: '18:00' },
+        ],
+      },
+    ];
+  }
+
   async findPublicByEdificio(edificioId: string) {
     return this.zonaModel
       .find({ edificioId: new Types.ObjectId(edificioId) })
-      .select('nombre descripcion horarios aforoMaximo lapsoMinutos')
+      .select('nombre descripcion politicasUso imagenes enMantenimiento motivoMantenimiento horarios aforoMaximo lapsoMinutos')
       .lean();
   }
 }

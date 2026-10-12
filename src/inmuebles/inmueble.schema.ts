@@ -10,9 +10,11 @@ export const TRANSACCION = ['venta', 'arriendo'] as const;
 export type Transaccion = (typeof TRANSACCION)[number];
 
 export const ESTADO_INMUEBLE = [
+  'pendiente_aprobacion',
   'activa',
   'vendida',
   'arrendada',
+  'rechazada',
   'cancelada',
 ] as const;
 export type EstadoInmueble = (typeof ESTADO_INMUEBLE)[number];

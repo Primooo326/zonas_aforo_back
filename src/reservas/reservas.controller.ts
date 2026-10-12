@@ -7,6 +7,7 @@ import {
   Body,
   HttpCode,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { ReservasService } from './reservas.service';
 import { CreateReservaDto } from './dto/create-reserva.dto';
@@ -76,6 +77,25 @@ export class ReservasController {
   @UseGuards(JwtAuthGuard)
   cancelar(@Param('id') id: string) {
     return this.reservasService.cancelar(id);
+  }
+
+  @Post('reservas/:id/aprobar')
+  @UseGuards(JwtAuthGuard)
+  aprobar(@Param('id') id: string) {
+    return this.reservasService.aprobar(id);
+  }
+
+  @Post('reservas/:id/rechazar')
+  @UseGuards(JwtAuthGuard)
+  rechazar(@Param('id') id: string, @Body('motivo') motivo?: string) {
+    return this.reservasService.rechazar(id, motivo);
+  }
+
+  @Post('reservas/admin')
+  @UseGuards(JwtAuthGuard)
+  crearAdmin(@Body() dto: any, @Request() req: any) {
+    const edificioId = req.user?.id || dto.edificioId;
+    return this.reservasService.crearAdmin(dto, edificioId);
   }
 
   @Get('edificio/:edificioId/reportes')

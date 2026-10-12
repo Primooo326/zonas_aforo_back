@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
@@ -33,10 +34,14 @@ export class AuthService {
   async login(dto: { email: string; password: string }) {
     // dto is validated by class-validator via LoginDto
     const edificio = await this.edificioModel.findOne({ email: dto.email });
-    if (!edificio) throw new UnauthorizedException('Credenciales inválidas');
+    if (!edificio) {
+      throw new NotFoundException('Datos incorrectos. El usuario no existe. Por favor regístrate.');
+    }
 
     const valid = await bcrypt.compare(dto.password, edificio.password);
-    if (!valid) throw new UnauthorizedException('Credenciales inválidas');
+    if (!valid) {
+      throw new UnauthorizedException('Datos incorrectos. Verifica tu correo y contraseña.');
+    }
 
     return this.generateToken(edificio);
   }

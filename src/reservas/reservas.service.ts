@@ -19,20 +19,57 @@ export class ReservasService {
     private eventsGateway: EventsGateway,
   ) {}
 
+  private estaEnMantenimientoEnFechaHora(
+    zona: any,
+    fecha: string,
+    horaInicio: string,
+    horaFin: string,
+  ): boolean {
+    if (!zona.enMantenimiento) return false;
+
+    // Si no tiene fechas especificadas, el mantenimiento es inmediato e indefinido
+    if (!zona.mantenimientoFechaInicio && !zona.mantenimientoFechaFin) {
+      return true;
+    }
+
+    const fInicio = zona.mantenimientoFechaInicio || '1970-01-01';
+    const hInicio = zona.mantenimientoHoraInicio || '00:00';
+    const fFin = zona.mantenimientoFechaFin || '2099-12-31';
+    const hFin = zona.mantenimientoHoraFin || '23:59';
+
+    const slotInicio = `${fecha}T${horaInicio}`;
+    const slotFin = `${fecha}T${horaFin}`;
+    const mantInicio = `${fInicio}T${hInicio}`;
+    const mantFin = `${fFin}T${hFin}`;
+
+    return slotInicio < mantFin && slotFin > mantInicio;
+  }
+
   private async validarDisponibilidad(
     zonaId: string,
     fecha: string,
     horaInicio: string,
     horaFin: string,
   ) {
+    const zona = await this.zonasService.findOne(zonaId);
+
+    if (this.estaEnMantenimientoEnFechaHora(zona, fecha, horaInicio, horaFin)) {
+      return {
+        disponible: false,
+        ocupadas: zona.aforoMaximo,
+        disponibles: 0,
+        enMantenimiento: true,
+        motivoMantenimiento: zona.motivoMantenimiento || 'Mantenimiento programado',
+      };
+    }
+
     const ocupadas = await this.reservaModel.countDocuments({
       zonaId: new Types.ObjectId(zonaId),
       fecha,
-      estado: 'activa',
+      estado: { $in: ['activa', 'aprobada'] },
       $or: [{ horaInicio: { $lt: horaFin }, horaFin: { $gt: horaInicio } }],
     });
 
-    const zona = await this.zonasService.findOne(zonaId);
     return {
       disponible: ocupadas < zona.aforoMaximo,
       ocupadas,
@@ -47,6 +84,17 @@ export class ReservasService {
     horaFin: string,
   ) {
     const zona = await this.zonasService.findOne(zonaId);
+
+    if (this.estaEnMantenimientoEnFechaHora(zona, fecha, horaInicio, horaFin)) {
+      const periodoMsg = zona.mantenimientoFechaInicio
+        ? ` (del ${zona.mantenimientoFechaInicio} ${zona.mantenimientoHoraInicio || ''} al ${zona.mantenimientoFechaFin || ''} ${zona.mantenimientoHoraFin || ''})`
+        : '';
+      throw new BadRequestException(
+        `La zona "${zona.nombre}" se encuentra en mantenimiento${periodoMsg}${
+          zona.motivoMantenimiento ? ': ' + zona.motivoMantenimiento : ''
+        } y no admite reservas.`,
+      );
+    }
 
     const hoy = new Date();
     const fechaSel = new Date(fecha + 'T00:00:00');
@@ -146,6 +194,11 @@ export class ReservasService {
     let torreInmueble = dto.torreInmueble;
     let tipo = dto.tipo || 'propietario';
 
+    // Regla de Negocio: Validar que el solicitante no sea menor de edad
+    if ((dto as any).edadSolicitante !== undefined && Number((dto as any).edadSolicitante) < 18) {
+      throw new BadRequestException('Los menores de edad no están autorizados para reservar zonas comunes.');
+    }
+
     if (dto.censoUnidadId && Types.ObjectId.isValid(dto.censoUnidadId)) {
       const unidad = await this.censoModel.findById(dto.censoUnidadId);
       if (unidad) {
@@ -175,6 +228,15 @@ export class ReservasService {
         });
 
         if (match) {
+          // Si el residente censado es menor de edad, bloquear
+          if (match.fechaNacimiento) {
+            const birth = new Date(match.fechaNacimiento);
+            const age = Math.floor((Date.now() - birth.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+            if (age < 18) {
+              throw new BadRequestException('Los menores de edad no están autorizados para apartar zonas comunes.');
+            }
+          }
+
           esCensoVerificado = true;
           tipo =
             match.condicion === 'arrendatario'
@@ -193,6 +255,10 @@ export class ReservasService {
       telefonoContacto: dto.telefonoContacto,
       edificioId: new Types.ObjectId(dto.edificioId),
       zonaId: new Types.ObjectId(dto.zonaId),
+      estado: (dto as any).esReservaAdmin ? 'aprobada' : (dto as any).estado || 'activa',
+      esReservaAdmin: Boolean((dto as any).esReservaAdmin),
+      motivoAdmin: (dto as any).motivoAdmin,
+      edadSolicitante: (dto as any).edadSolicitante,
     });
 
     this.eventsGateway.emitirActualizacion(dto.edificioId, {
@@ -231,6 +297,50 @@ export class ReservasService {
     });
 
     return reserva;
+  }
+
+  async aprobar(id: string) {
+    const reserva = await this.reservaModel
+      .findByIdAndUpdate(id, { estado: 'aprobada' }, { new: true })
+      .lean();
+    if (!reserva) throw new NotFoundException('Reserva no encontrada');
+
+    this.eventsGateway.emitirActualizacion(reserva.edificioId.toString(), {
+      tipo: 'reserva_aprobada',
+      data: reserva,
+    });
+
+    return reserva;
+  }
+
+  async rechazar(id: string, motivo?: string) {
+    const reserva = await this.reservaModel
+      .findByIdAndUpdate(
+        id,
+        {
+          estado: 'rechazada',
+          motivoRechazo: motivo || 'Cancelada por la administración',
+        },
+        { new: true },
+      )
+      .lean();
+    if (!reserva) throw new NotFoundException('Reserva no encontrada');
+
+    this.eventsGateway.emitirActualizacion(reserva.edificioId.toString(), {
+      tipo: 'reserva_rechazada',
+      data: reserva,
+    });
+
+    return reserva;
+  }
+
+  async crearAdmin(dto: any, edificioId: string) {
+    return this.crear({
+      ...dto,
+      edificioId,
+      esReservaAdmin: true,
+      estado: 'aprobada',
+    });
   }
 
   async getZonaPublic(id: string) {

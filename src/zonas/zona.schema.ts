@@ -11,6 +11,30 @@ export class Zona {
   @Prop()
   descripcion: string;
 
+  @Prop({ default: '' })
+  politicasUso: string;
+
+  @Prop({ type: [String], default: [] })
+  imagenes: string[];
+
+  @Prop({ default: false })
+  enMantenimiento: boolean;
+
+  @Prop({ default: '' })
+  motivoMantenimiento: string;
+
+  @Prop({ default: '' })
+  mantenimientoFechaInicio: string;
+
+  @Prop({ default: '' })
+  mantenimientoHoraInicio: string;
+
+  @Prop({ default: '' })
+  mantenimientoFechaFin: string;
+
+  @Prop({ default: '' })
+  mantenimientoHoraFin: string;
+
   @Prop({
     type: [
       {
