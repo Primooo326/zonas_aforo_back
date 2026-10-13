@@ -17,7 +17,7 @@ import {
   InvitacionCenso,
   InvitacionCensoDocument,
 } from './censo.schema';
-import { CreateCensoDto } from './dto/create-censo.dto';
+import { CreateCensoDto, PersonaCensoDto } from './dto/create-censo.dto';
 import { UpdateCensoDto } from './dto/update-censo.dto';
 import { PublicCensoDto } from './dto/public-censo.dto';
 import { ImportarMasivoDto } from './dto/importar-masivo.dto';
@@ -248,6 +248,17 @@ export class CensoService {
   ): Promise<CensoUnidadDocument> {
     this.validarPersonasYVehiculos(dto);
     const data = this.normalizarVehiculos({ ...dto });
+
+    // Obtener la unidad antes de actualizar para comparar asignaciones
+    const previa = await this.censoModel.findOne({
+      _id: new Types.ObjectId(id),
+      edificioId: new Types.ObjectId(edificioId),
+    });
+
+    if (!previa) {
+      throw new NotFoundException('Unidad de censo no encontrada');
+    }
+
     const censo = await this.censoModel
       .findOneAndUpdate(
         {
@@ -263,7 +274,154 @@ export class CensoService {
       throw new NotFoundException('Unidad de censo no encontrada');
     }
 
+    // Sincronización bidireccional de parqueaderos
+    if (dto.parqueaderosAsignados !== undefined) {
+      const numsPrevios = new Set((previa.parqueaderosAsignados || []).map((p) => p.numero.trim().toUpperCase()));
+      const numsNuevos = new Set((dto.parqueaderosAsignados || []).map((p) => p.numero.trim().toUpperCase()));
+
+      // Desasignados
+      const desasignados = [...numsPrevios].filter((num) => !numsNuevos.has(num));
+      if (desasignados.length > 0) {
+        await this.parqueaderoModel.updateMany(
+          {
+            edificioId: new Types.ObjectId(edificioId),
+            numero: { $in: desasignados },
+          },
+          { $set: { torreAsignada: '', aptoAsignado: '' } },
+        );
+      }
+
+      // Asignados
+      const asignados = [...numsNuevos];
+      if (asignados.length > 0) {
+        await this.parqueaderoModel.updateMany(
+          {
+            edificioId: new Types.ObjectId(edificioId),
+            numero: { $in: asignados },
+          },
+          {
+            $set: {
+              torreAsignada: censo.torre || '',
+              aptoAsignado: censo.numeroApto || '',
+            },
+          },
+        );
+      }
+    }
+
+    // Sincronización bidireccional de bodegas
+    if (dto.bodegasAsignadas !== undefined) {
+      const numsPrevios = new Set((previa.bodegasAsignadas || []).map((b) => b.numero.trim().toUpperCase()));
+      const numsNuevos = new Set((dto.bodegasAsignadas || []).map((b) => b.numero.trim().toUpperCase()));
+
+      // Desasignadas
+      const desasignadas = [...numsPrevios].filter((num) => !numsNuevos.has(num));
+      if (desasignadas.length > 0) {
+        await this.bodegaModel.updateMany(
+          {
+            edificioId: new Types.ObjectId(edificioId),
+            numero: { $in: desasignadas },
+          },
+          { $set: { torreAsignada: '', aptoAsignado: '' } },
+        );
+      }
+
+      // Asignadas
+      const asignadas = [...numsNuevos];
+      if (asignadas.length > 0) {
+        await this.bodegaModel.updateMany(
+          {
+            edificioId: new Types.ObjectId(edificioId),
+            numero: { $in: asignadas },
+          },
+          {
+            $set: {
+              torreAsignada: censo.torre || '',
+              aptoAsignado: censo.numeroApto || '',
+            },
+          },
+        );
+      }
+    }
+
     return censo;
+  }
+
+  async agregarHabitante(
+    unidadId: string,
+    edificioId: string,
+    dto: PersonaCensoDto,
+  ): Promise<CensoUnidadDocument> {
+    const censo = await this.censoModel.findOne({
+      _id: new Types.ObjectId(unidadId),
+      edificioId: new Types.ObjectId(edificioId),
+    });
+
+    if (!censo) {
+      throw new NotFoundException('Inmueble / Unidad habitacional no encontrada');
+    }
+
+    if (!dto.nombreCompleto || !dto.nombreCompleto.trim()) {
+      throw new BadRequestException('El nombre completo del habitante es obligatorio');
+    }
+
+    if (!dto.fechaNacimiento) {
+      throw new BadRequestException('La fecha de nacimiento del habitante es obligatoria');
+    }
+
+    const nac = new Date(dto.fechaNacimiento);
+    if (isNaN(nac.getTime())) {
+      throw new BadRequestException('Fecha de nacimiento inválida');
+    }
+
+    const edad = calcularEdad(dto.fechaNacimiento);
+    if (edad < 18 && dto.condicion === 'propietario') {
+      throw new BadRequestException('Un menor de edad no puede ser registrado como propietario');
+    }
+
+    if (edad < 18 && dto.esContactoPrincipal) {
+      throw new BadRequestException('Un menor de edad no puede ser el contacto principal');
+    }
+
+    // Si el inmueble estaba desocupado, pasa automáticamente a habitado
+    if (censo.tipoOcupacion === 'desocupada') {
+      censo.tipoOcupacion = 'habitada';
+    }
+
+    // Regla de contacto principal:
+    // Si no había personas antes y es adulto, se asigna como contacto principal automáticamente.
+    const tienePersonasPrevias = Array.isArray(censo.personas) && censo.personas.length > 0;
+    const esPrimerAdulto = !tienePersonasPrevias && edad >= 18;
+    const debeSerPrincipal = Boolean(dto.esContactoPrincipal || esPrimerAdulto);
+
+    if (debeSerPrincipal) {
+      // Transferir titularidad al nuevo habitante
+      if (Array.isArray(censo.personas)) {
+        censo.personas.forEach((p) => {
+          p.esContactoPrincipal = false;
+        });
+      }
+    }
+
+    const nuevaPersona: PersonaCenso = {
+      nombreCompleto: dto.nombreCompleto.trim(),
+      telefono: dto.telefono?.trim() || '',
+      email: dto.email?.trim().toLowerCase() || '',
+      documento: dto.documento?.trim() || '',
+      fechaNacimiento: nac,
+      condicion: (dto.condicion as any) || (edad < 18 ? 'conviviente' : 'habitante'),
+      esContactoPrincipal: debeSerPrincipal,
+      discapacidad: Boolean(dto.discapacidad),
+      condicionEspecial: dto.condicionEspecial?.trim() || '',
+      adjuntoCedulaUrl: dto.adjuntoCedulaUrl?.trim() || '',
+    };
+
+    if (!Array.isArray(censo.personas)) {
+      censo.personas = [];
+    }
+    censo.personas.push(nuevaPersona);
+
+    return censo.save();
   }
 
   async remove(id: string, edificioId: string): Promise<{ deleted: boolean }> {

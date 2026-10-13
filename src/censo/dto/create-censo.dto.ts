@@ -138,6 +138,33 @@ export class VehiculoCensoDto {
   adjuntoTarjetaPropiedadUrl?: string;
 }
 
+export class ParqueaderoAsignadoDto {
+  @IsString()
+  @IsNotEmpty()
+  numero: string;
+
+  @IsString()
+  @IsOptional()
+  tipo?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  esCubierto?: boolean;
+}
+
+export class BodegaAsignadaDto {
+  @IsString()
+  @IsNotEmpty()
+  numero: string;
+
+  @IsString()
+  @IsOptional()
+  ubicacion?: string;
+
+  @IsOptional()
+  metrosCuadrados?: number;
+}
+
 export class CreateCensoDto {
   @IsString()
   @IsNotEmpty()
@@ -155,6 +182,18 @@ export class CreateCensoDto {
   @IsOptional()
   @IsIn([...TIPO_OCUPACION] as string[])
   tipoOcupacion?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ParqueaderoAsignadoDto)
+  @IsOptional()
+  parqueaderosAsignados?: ParqueaderoAsignadoDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BodegaAsignadaDto)
+  @IsOptional()
+  bodegasAsignadas?: BodegaAsignadaDto[];
 
   @IsArray()
   @ValidateNested({ each: true })

@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CensoService } from './censo.service';
-import { CreateCensoDto } from './dto/create-censo.dto';
+import { CreateCensoDto, PersonaCensoDto } from './dto/create-censo.dto';
 import { UpdateCensoDto } from './dto/update-censo.dto';
 import { PublicCensoDto } from './dto/public-censo.dto';
 import { ImportarMasivoDto } from './dto/importar-masivo.dto';
@@ -123,6 +123,17 @@ export class CensoController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post(':id/habitante')
+  async agregarHabitante(
+    @Param('id') id: string,
+    @Body() dto: PersonaCensoDto,
+    @Request() req: { user: AuthenticatedUser },
+  ) {
+    const edificioId = this.getEdificioId(req);
+    return this.censoService.agregarHabitante(id, edificioId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Delete(':id')
   async remove(
     @Param('id') id: string,
@@ -190,6 +201,11 @@ export class CensoController {
   @Get('public/:edificioId/unidades')
   async getUnidadesPublicas(@Param('edificioId') edificioId: string) {
     return this.censoService.getPublicCatalogoUnidades(edificioId);
+  }
+
+  @Get('public/:edificioId/parqueaderos')
+  async getParqueaderosPublicos(@Param('edificioId') edificioId: string) {
+    return this.censoService.getInventarioParqueaderos(edificioId);
   }
 
   @Post('public/:edificioId')
