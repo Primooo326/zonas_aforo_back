@@ -104,21 +104,31 @@ export class ZonasService {
     params: {
       enMantenimiento: boolean;
       motivo?: string;
+      motivoMantenimiento?: string;
       fechaInicio?: string;
+      mantenimientoFechaInicio?: string;
       horaInicio?: string;
+      mantenimientoHoraInicio?: string;
       fechaFin?: string;
+      mantenimientoFechaFin?: string;
       horaFin?: string;
+      mantenimientoHoraFin?: string;
     },
     edificioId: string,
   ) {
     await this.validarPropietario(id, edificioId);
+    const motivo = params.motivo ?? params.motivoMantenimiento ?? '';
+    const fechaInicio = params.fechaInicio ?? params.mantenimientoFechaInicio ?? '';
+    const horaInicio = params.horaInicio ?? params.mantenimientoHoraInicio ?? '';
+    const fechaFin = params.fechaFin ?? params.mantenimientoFechaFin ?? '';
+    const horaFin = params.horaFin ?? params.mantenimientoHoraFin ?? '';
     const updatePayload: any = {
       enMantenimiento: params.enMantenimiento,
-      motivoMantenimiento: params.motivo || '',
-      mantenimientoFechaInicio: params.enMantenimiento ? (params.fechaInicio || '') : '',
-      mantenimientoHoraInicio: params.enMantenimiento ? (params.horaInicio || '') : '',
-      mantenimientoFechaFin: params.enMantenimiento ? (params.fechaFin || '') : '',
-      mantenimientoHoraFin: params.enMantenimiento ? (params.horaFin || '') : '',
+      motivoMantenimiento: motivo,
+      mantenimientoFechaInicio: params.enMantenimiento ? fechaInicio : '',
+      mantenimientoHoraInicio: params.enMantenimiento ? horaInicio : '',
+      mantenimientoFechaFin: params.enMantenimiento ? fechaFin : '',
+      mantenimientoHoraFin: params.enMantenimiento ? horaFin : '',
     };
     const actualizada = await this.zonaModel
       .findByIdAndUpdate(id, updatePayload, { new: true })
@@ -210,7 +220,9 @@ export class ZonasService {
   async findPublicByEdificio(edificioId: string) {
     return this.zonaModel
       .find({ edificioId: new Types.ObjectId(edificioId) })
-      .select('nombre descripcion politicasUso imagenes enMantenimiento motivoMantenimiento horarios aforoMaximo lapsoMinutos')
+      .select(
+        'nombre descripcion politicasUso imagenes enMantenimiento motivoMantenimiento mantenimientoFechaInicio mantenimientoHoraInicio mantenimientoFechaFin mantenimientoHoraFin horarios aforoMaximo lapsoMinutos',
+      )
       .lean();
   }
 }

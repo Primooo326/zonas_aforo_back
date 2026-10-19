@@ -64,36 +64,41 @@ export class CensoService {
     private readonly invitacionModel: Model<InvitacionCensoDocument>,
   ) {}
 
-  private validarPersonasYVehiculos(dto: { personas?: any[]; vehiculos?: any[] }) {
+  private validarPersonasYVehiculos(
+    dto: { personas?: any[]; vehiculos?: any[] },
+    options?: { fechaNacimientoOpcional?: boolean },
+  ) {
     if (dto.personas && Array.isArray(dto.personas)) {
       const hoy = new Date();
       let contactosPrincipales = 0;
 
       for (const p of dto.personas) {
         if (!p.fechaNacimiento) {
-          throw new BadRequestException(`La fecha de nacimiento es obligatoria para ${p.nombreCompleto || 'cada persona'}`);
-        }
-
-        const nac = new Date(p.fechaNacimiento);
-        if (isNaN(nac.getTime())) {
-          throw new BadRequestException(`Fecha de nacimiento inválida para ${p.nombreCompleto || 'la persona'}`);
-        }
-
-        if (nac > hoy) {
-          throw new BadRequestException(`La fecha de nacimiento de ${p.nombreCompleto || 'la persona'} no puede ser futura`);
-        }
-
-        const edad = calcularEdad(nac);
-        if (edad > 125) {
-          throw new BadRequestException(`La edad de ${p.nombreCompleto} (${edad} años) no puede superar los 125 años`);
-        }
-
-        if (edad < 18) {
-          if (p.condicion === 'propietario') {
-            throw new BadRequestException(`Un menor de edad (${p.nombreCompleto}, ${edad} años) no puede ser registrado como propietario`);
+          if (!options?.fechaNacimientoOpcional) {
+            throw new BadRequestException(`La fecha de nacimiento es obligatoria para ${p.nombreCompleto || 'cada persona'}`);
           }
-          if (p.esContactoPrincipal) {
-            throw new BadRequestException(`Un menor de edad (${p.nombreCompleto}, ${edad} años) no puede ser contacto principal`);
+        } else {
+          const nac = new Date(p.fechaNacimiento);
+          if (isNaN(nac.getTime())) {
+            throw new BadRequestException(`Fecha de nacimiento inválida para ${p.nombreCompleto || 'la persona'}`);
+          }
+
+          if (nac > hoy) {
+            throw new BadRequestException(`La fecha de nacimiento de ${p.nombreCompleto || 'la persona'} no puede ser futura`);
+          }
+
+          const edad = calcularEdad(nac);
+          if (edad > 125) {
+            throw new BadRequestException(`La edad de ${p.nombreCompleto} (${edad} años) no puede superar los 125 años`);
+          }
+
+          if (edad < 18) {
+            if (p.condicion === 'propietario') {
+              throw new BadRequestException(`Un menor de edad (${p.nombreCompleto}, ${edad} años) no puede ser registrado como propietario`);
+            }
+            if (p.esContactoPrincipal) {
+              throw new BadRequestException(`Un menor de edad (${p.nombreCompleto}, ${edad} años) no puede ser contacto principal`);
+            }
           }
         }
 
@@ -665,9 +670,9 @@ export class CensoService {
           residentesPorUnidad.set(key, []);
         }
 
-        let fechaNac = r.fechaNacimiento;
+        let fechaNac = r.fechaNacimiento?.trim() || undefined;
         if (typeof fechaNac === 'string') {
-          const matchDMY = fechaNac.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+          const matchDMY = fechaNac.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
           if (matchDMY) {
             const [, d, mStr, y] = matchDMY;
             fechaNac = `${y}-${mStr.padStart(2, '0')}-${d.padStart(2, '0')}`;
@@ -683,7 +688,7 @@ export class CensoService {
               ? 'arrendatario'
               : 'conviviente',
           esContactoPrincipal: Boolean(r.esContactoPrincipal),
-          fechaNacimiento: fechaNac,
+          ...(fechaNac ? { fechaNacimiento: fechaNac } : {}),
           telefono: r.telefono?.trim() || undefined,
           email: r.email?.trim() || undefined,
         };
@@ -812,7 +817,10 @@ export class CensoService {
       const vehiculosAsignados = vehiculosPorUnidad.get(unitKey) || vehiculosPorUnidad.get(identificador.toLowerCase()) || [];
 
       if (personasAsignadas.length > 0 || vehiculosAsignados.length > 0) {
-        this.validarPersonasYVehiculos({ personas: personasAsignadas, vehiculos: vehiculosAsignados });
+        this.validarPersonasYVehiculos(
+          { personas: personasAsignadas, vehiculos: vehiculosAsignados },
+          { fechaNacimientoOpcional: true },
+        );
       }
 
       const idKey = identificador.toLowerCase();
@@ -995,6 +1003,9 @@ export class CensoService {
     if (!inv) {
       throw new NotFoundException('Enlace de invitación inválido o no encontrado');
     }
+    if (inv.utilizado) {
+      throw new BadRequestException('El enlace de invitación al censo ya ha sido utilizado.');
+    }
     if (new Date() > new Date(inv.expiraEn)) {
       throw new BadRequestException('El enlace de invitación al censo ha expirado. Por favor solicita uno nuevo.');
     }
@@ -1003,6 +1014,16 @@ export class CensoService {
 
   async responderInvitacion(token: string, dto: PublicCensoDto) {
     const inv = await this.validarInvitacion(token);
+    if (inv.inmueblePredefinido) {
+      const predefNorm = inv.inmueblePredefinido.trim().toLowerCase();
+      const dtoIdentNorm = (dto.identificador || '').trim().toLowerCase();
+      if (dtoIdentNorm && dtoIdentNorm !== predefNorm) {
+        throw new BadRequestException(
+          `Esta invitación está restringida exclusivamente a la unidad "${inv.inmueblePredefinido}".`,
+        );
+      }
+      dto.identificador = inv.inmueblePredefinido;
+    }
     const edificioId = (inv.edificioId as any)._id?.toString() || inv.edificioId.toString();
     const res = await this.createFromPublic(edificioId, dto);
     inv.utilizado = true;

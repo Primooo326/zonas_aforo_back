@@ -144,19 +144,7 @@ export class ReservasService {
     horaInicio: string,
     horaFin: string,
   ) {
-    const ocupadas = await this.reservaModel.countDocuments({
-      zonaId: new Types.ObjectId(zonaId),
-      fecha,
-      estado: 'activa',
-      $or: [{ horaInicio: { $lt: horaFin }, horaFin: { $gt: horaInicio } }],
-    });
-
-    const zona = await this.zonasService.findOne(zonaId);
-    return {
-      disponible: ocupadas < zona.aforoMaximo,
-      ocupadas,
-      disponibles: zona.aforoMaximo - ocupadas,
-    };
+    return this.validarDisponibilidad(zonaId, fecha, horaInicio, horaFin);
   }
 
   async crear(dto: {
@@ -170,6 +158,7 @@ export class ReservasService {
     tipo?: string;
     censoUnidadId?: string;
     telefonoContacto?: string;
+    edadSolicitante?: number;
   }) {
     await this.validarReglas(
       dto.zonaId,
@@ -196,12 +185,23 @@ export class ReservasService {
 
     // Regla de Negocio: Validar que el solicitante no sea menor de edad
     if ((dto as any).edadSolicitante !== undefined && Number((dto as any).edadSolicitante) < 18) {
-      throw new BadRequestException('Los menores de edad no están autorizados para reservar zonas comunes.');
+      throw new BadRequestException('Los menores de edad no están autorizados para apartar zonas comunes.');
     }
 
     if (dto.censoUnidadId && Types.ObjectId.isValid(dto.censoUnidadId)) {
       const unidad = await this.censoModel.findById(dto.censoUnidadId);
       if (unidad) {
+        if (unidad.tags?.includes('moroso')) {
+          throw new BadRequestException(
+            'La unidad presenta mora en administración y no está autorizada para reservar zonas comunes.',
+          );
+        }
+        if (unidad.estado && unidad.estado !== 'aprobado') {
+          throw new BadRequestException(
+            'El censo de la unidad aún no se encuentra aprobado por la administración.',
+          );
+        }
+
         censoUnidadObjId = unidad._id as Types.ObjectId;
         if (!torreInmueble) {
           torreInmueble =
@@ -365,6 +365,7 @@ export class ReservasService {
     fecha: string;
     horaInicio: string;
     nombreSolicitante: string;
+    edadSolicitante?: number;
     torreInmueble: string;
     tipo?: string;
     censoUnidadId?: string;
@@ -382,6 +383,7 @@ export class ReservasService {
       horaInicio: dto.horaInicio,
       horaFin,
       nombreSolicitante: dto.nombreSolicitante,
+      edadSolicitante: dto.edadSolicitante,
       torreInmueble: dto.torreInmueble,
       tipo: dto.tipo || 'propietario',
       censoUnidadId: dto.censoUnidadId,
@@ -393,22 +395,24 @@ export class ReservasService {
     const reservas = await this.reservaModel
       .find({
         edificioId: new Types.ObjectId(edificioId),
-        estado: 'activa',
+        estado: { $in: ['activa', 'aprobada'] },
       })
       .populate('zonaId')
       .lean();
 
-    const porZona: Record<string, { total: number; ocupacion: number }> = {};
+    const porZona: Record<string, { total: number; aforoMaximo: number }> = {};
 
     for (const r of reservas as any[]) {
       const zonaName = r.zonaId?.nombre || 'Desconocida';
-      if (!porZona[zonaName]) porZona[zonaName] = { total: 0, ocupacion: 0 };
+      const aforo = r.zonaId?.aforoMaximo || 1;
+      if (!porZona[zonaName]) porZona[zonaName] = { total: 0, aforoMaximo: aforo };
       porZona[zonaName].total++;
     }
 
     return Object.entries(porZona).map(([zona, data]) => ({
       zona,
       totalReservas: data.total,
+      ocupacion: Math.min(100, Math.round((data.total / data.aforoMaximo) * 100)),
     }));
   }
 }

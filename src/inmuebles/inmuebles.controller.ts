@@ -115,7 +115,7 @@ export class InmueblesController {
     return this.inmueblesService.create(dto, edificioId, propietarioId);
   }
 
-  // Listado público por edificio — sin auth, por defecto solo activas
+  // Listado público por edificio — sin auth, por defecto solo activas; con auth retorna todos los estados
   @Get('inmuebles')
   findAll(
     @Query('edificioId') edificioId: string,
@@ -123,12 +123,15 @@ export class InmueblesController {
     @Query('transaccion') transaccion?: string,
     @Query('estado') estado?: string,
     @Query('search') search?: string,
+    @Request() req?: any,
   ) {
+    const estadoEfectivo =
+      estado || (req?.headers?.authorization ? 'todos' : undefined);
     return this.inmueblesService.findAll({
       edificioId,
       tipo,
       transaccion,
-      estado,
+      estado: estadoEfectivo,
       search,
     });
   }

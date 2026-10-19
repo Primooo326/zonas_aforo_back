@@ -122,8 +122,9 @@ export class ImportarResidenteItemDto {
   @IsBoolean()
   esContactoPrincipal?: boolean;
 
+  @IsOptional()
   @IsString()
-  fechaNacimiento: string;
+  fechaNacimiento?: string;
 
   @IsOptional()
   @IsString()

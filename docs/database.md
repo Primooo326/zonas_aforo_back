@@ -1,0 +1,1 @@
+para conectar a la base de datos, abrir puerto tunel ssh a su ip 

@@ -32,8 +32,8 @@ export class PersonaCenso {
   @Prop({ trim: true })
   documento?: string;
 
-  @Prop({ required: true })
-  fechaNacimiento: Date;
+  @Prop({ required: false })
+  fechaNacimiento?: Date;
 
   @Prop({ required: true, enum: CONDICION_PERSONA, default: 'conviviente', type: String })
   condicion: CondicionPersona;

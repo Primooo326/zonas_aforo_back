@@ -1,3 +1,10 @@
+jest.mock('@nestjs/platform-express', () => ({
+  FilesInterceptor: () => jest.fn(),
+}));
+jest.mock('multer', () => ({
+  memoryStorage: () => jest.fn(),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { InmueblesController } from './inmuebles.controller';
 import { InmueblesService } from './inmuebles.service';

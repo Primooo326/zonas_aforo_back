@@ -92,6 +92,28 @@ export class CensoController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('invitaciones')
+  async crearInvitacion(
+    @Body() body: { diasValidez?: number; inmueblePredefinido?: string },
+    @Request() req: { user: AuthenticatedUser },
+  ) {
+    const edificioId = this.getEdificioId(req);
+    return this.censoService.crearInvitacion(
+      edificioId,
+      body?.diasValidez || 7,
+      body?.inmueblePredefinido,
+      req.user?.id || req.user?.sub,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('invitaciones')
+  async getInvitaciones(@Request() req: { user: AuthenticatedUser }) {
+    const edificioId = this.getEdificioId(req);
+    return this.censoService.getInvitaciones(edificioId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
   async findOne(
     @Param('id') id: string,
@@ -172,28 +194,6 @@ export class CensoController {
   ) {
     const edificioId = this.getEdificioId(req);
     return this.censoService.actualizarTags(id, edificioId, tags);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('invitaciones')
-  async crearInvitacion(
-    @Body() body: { diasValidez?: number; inmueblePredefinido?: string },
-    @Request() req: { user: AuthenticatedUser },
-  ) {
-    const edificioId = this.getEdificioId(req);
-    return this.censoService.crearInvitacion(
-      edificioId,
-      body?.diasValidez || 7,
-      body?.inmueblePredefinido,
-      req.user?.id || req.user?.sub,
-    );
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get('invitaciones')
-  async getInvitaciones(@Request() req: { user: AuthenticatedUser }) {
-    const edificioId = this.getEdificioId(req);
-    return this.censoService.getInvitaciones(edificioId);
   }
 
   // --- Endpoints Públicos para Residentes ---

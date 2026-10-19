@@ -86,9 +86,12 @@ export class InmueblesService {
 
     if (query.tipo) filter.tipo = query.tipo;
     if (query.transaccion) filter.transaccion = query.transaccion;
-    // Por defecto solo activas para público; si se pide explícitamente estado, filtrar
-    if (query.estado) filter.estado = query.estado;
-    else filter.estado = 'activa';
+    // Por defecto solo activas para público; si se pide 'todos' se retornan todos los estados
+    if (query.estado && query.estado !== 'todos' && query.estado !== 'all') {
+      filter.estado = query.estado;
+    } else if (!query.estado) {
+      filter.estado = 'activa';
+    }
 
     if (query.search) {
       filter.$or = [
