@@ -922,19 +922,50 @@ export class CensoService {
         }
       }
 
-      // Garantizar estricto UN ÚNICO contacto principal por unidad residencial
+      // Autocorrección para menores de edad en censo masivo de copropiedades:
+      // Si un menor de 18 años viene catalogado como 'propietario' o 'contactoPrincipal' en el Excel,
+      // reclasificarlo automáticamente a 'conviviente' y retirar contactoPrincipal.
+      for (const p of personasLimpias) {
+        if (p.fechaNacimiento) {
+          const nac = new Date(p.fechaNacimiento);
+          if (!isNaN(nac.getTime())) {
+            const edad = calcularEdad(nac);
+            if (edad < 18) {
+              if (p.condicion === 'propietario') {
+                p.condicion = 'conviviente';
+              }
+              p.esContactoPrincipal = false;
+            }
+          }
+        }
+      }
+
+      // Garantizar estricto UN ÚNICO contacto principal adulto por unidad residencial
       let contactoPrincipalAsignado = false;
       for (const p of personasLimpias) {
-        if (p.esContactoPrincipal) {
+        const nac = p.fechaNacimiento ? new Date(p.fechaNacimiento) : null;
+        const edad = nac && !isNaN(nac.getTime()) ? calcularEdad(nac) : 99;
+        if (p.esContactoPrincipal && edad >= 18) {
           if (!contactoPrincipalAsignado) {
             contactoPrincipalAsignado = true;
           } else {
             p.esContactoPrincipal = false;
           }
+        } else if (edad < 18) {
+          p.esContactoPrincipal = false;
         }
       }
       if (!contactoPrincipalAsignado && personasLimpias.length > 0) {
-        personasLimpias[0].esContactoPrincipal = true;
+        const primerAdulto = personasLimpias.find((p) => {
+          const nac = p.fechaNacimiento ? new Date(p.fechaNacimiento) : null;
+          const edad = nac && !isNaN(nac.getTime()) ? calcularEdad(nac) : 99;
+          return edad >= 18;
+        });
+        if (primerAdulto) {
+          primerAdulto.esContactoPrincipal = true;
+        } else {
+          personasLimpias[0].esContactoPrincipal = true;
+        }
       }
 
       // Sanitizar vehículos: si la placa trae textos descriptivos o formato irregular, limpiar
