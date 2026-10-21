@@ -5,6 +5,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Propietario, PropietarioSchema } from './propietario.schema';
 import { PropietariosService } from './propietarios.service';
 import { PropietariosController } from './propietarios.controller';
+import {
+  CensoUnidad,
+  CensoUnidadSchema,
+  InvitacionCenso,
+  InvitacionCensoSchema,
+} from '../censo/censo.schema';
+import { Edificio, EdificioSchema } from '../edificios/edificio.schema';
 
 @Module({
   imports: [
@@ -16,7 +23,12 @@ import { PropietariosController } from './propietarios.controller';
       }),
       inject: [ConfigService],
     }),
-    MongooseModule.forFeature([{ name: Propietario.name, schema: PropietarioSchema }]),
+    MongooseModule.forFeature([
+      { name: Propietario.name, schema: PropietarioSchema },
+      { name: CensoUnidad.name, schema: CensoUnidadSchema },
+      { name: InvitacionCenso.name, schema: InvitacionCensoSchema },
+      { name: Edificio.name, schema: EdificioSchema },
+    ]),
   ],
   controllers: [PropietariosController],
   providers: [PropietariosService],

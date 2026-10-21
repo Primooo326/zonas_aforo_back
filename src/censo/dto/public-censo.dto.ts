@@ -46,4 +46,8 @@ export class PublicCensoDto {
   @IsString()
   @IsOptional()
   adjuntoCertificadoLibertadUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  password?: string;
 }

@@ -8,6 +8,7 @@ import {
   BodegaInventario,
   InvitacionCenso,
 } from './censo.schema';
+import { Propietario } from '../propietarios/propietario.schema';
 import { Types } from 'mongoose';
 
 describe('CensoService', () => {
@@ -17,6 +18,7 @@ describe('CensoService', () => {
   let mockParqueaderoModel: any;
   let mockBodegaModel: any;
   let mockInvitacionModel: any;
+  let mockPropietarioModel: any;
 
   beforeEach(async () => {
     mockCensoModel = {
@@ -47,6 +49,14 @@ describe('CensoService', () => {
       exec: jest.fn(),
     };
 
+    mockPropietarioModel = {
+      find: jest.fn(),
+      findOne: jest.fn(),
+      create: jest.fn(),
+      updateMany: jest.fn(),
+      exec: jest.fn(),
+    };
+
     mockInvitacionModel = {
       find: jest.fn(),
       findOne: jest.fn(),
@@ -74,6 +84,10 @@ describe('CensoService', () => {
         {
           provide: getModelToken(InvitacionCenso.name),
           useValue: mockInvitacionModel,
+        },
+        {
+          provide: getModelToken(Propietario.name),
+          useValue: mockPropietarioModel,
         },
       ],
     }).compile();

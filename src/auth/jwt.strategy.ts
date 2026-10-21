@@ -30,6 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         email: propietario.email,
         nombre: propietario.nombre,
         edificioId: propietario.edificioId.toString(),
+        censoUnidadId: propietario.censoUnidadId ? propietario.censoUnidadId.toString() : undefined,
         role: 'propietario',
       };
     }
@@ -51,6 +52,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         email: propietario.email,
         nombre: propietario.nombre,
         edificioId: propietario.edificioId.toString(),
+        censoUnidadId: propietario.censoUnidadId ? propietario.censoUnidadId.toString() : undefined,
         role: 'propietario',
       };
     }

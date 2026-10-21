@@ -1,11 +1,22 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param } from '@nestjs/common';
 import { PropietariosService } from './propietarios.service';
 import { RegisterPropietarioDto } from './dto/register-propietario.dto';
 import { LoginPropietarioDto } from './dto/login-propietario.dto';
+import { RegistroInvitacionDto } from './dto/registro-invitacion.dto';
 
 @Controller('auth/propietario')
 export class PropietariosController {
-  constructor(private propietariosService: PropietariosService) {}
+  constructor(private readonly propietariosService: PropietariosService) {}
+
+  @Get('invitacion/:token')
+  validarInvitacion(@Param('token') token: string) {
+    return this.propietariosService.validarInvitacion(token);
+  }
+
+  @Post('registro-invitacion')
+  registrarConInvitacion(@Body() dto: RegistroInvitacionDto) {
+    return this.propietariosService.registrarConInvitacion(dto);
+  }
 
   @Post('register')
   register(@Body() dto: RegisterPropietarioDto) {

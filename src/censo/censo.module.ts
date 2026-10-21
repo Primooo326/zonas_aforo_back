@@ -12,6 +12,7 @@ import {
 } from './censo.schema';
 import { CensoController } from './censo.controller';
 import { CensoService } from './censo.service';
+import { Propietario, PropietarioSchema } from '../propietarios/propietario.schema';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { CensoService } from './censo.service';
       { name: ParqueaderoInventario.name, schema: ParqueaderoInventarioSchema },
       { name: BodegaInventario.name, schema: BodegaInventarioSchema },
       { name: InvitacionCenso.name, schema: InvitacionCensoSchema },
+      { name: Propietario.name, schema: PropietarioSchema },
     ]),
   ],
   controllers: [CensoController],

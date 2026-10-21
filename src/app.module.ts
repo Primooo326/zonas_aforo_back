@@ -13,6 +13,7 @@ import { EventsModule } from './events/events.module';
 import { InmueblesModule } from './inmuebles/inmuebles.module';
 import { PropietariosModule } from './propietarios/propietarios.module';
 import { CensoModule } from './censo/censo.module';
+import { PortalModule } from './portal/portal.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { CensoModule } from './censo/censo.module';
     InmueblesModule,
     PropietariosModule,
     CensoModule,
+    PortalModule,
   ],
   providers: [],
 })

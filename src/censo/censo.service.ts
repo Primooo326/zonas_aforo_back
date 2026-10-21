@@ -17,6 +17,8 @@ import {
   InvitacionCenso,
   InvitacionCensoDocument,
 } from './censo.schema';
+import { Propietario, PropietarioDocument } from '../propietarios/propietario.schema';
+import * as bcrypt from 'bcrypt';
 import { CreateCensoDto, PersonaCensoDto } from './dto/create-censo.dto';
 import { UpdateCensoDto } from './dto/update-censo.dto';
 import { PublicCensoDto } from './dto/public-censo.dto';
@@ -62,6 +64,8 @@ export class CensoService {
     private readonly bodegaModel: Model<BodegaInventarioDocument>,
     @InjectModel(InvitacionCenso.name)
     private readonly invitacionModel: Model<InvitacionCensoDocument>,
+    @InjectModel(Propietario.name)
+    private readonly propietarioModel: Model<PropietarioDocument>,
   ) {}
 
   private validarPersonasYVehiculos(
@@ -182,6 +186,9 @@ export class CensoService {
         unidadOriginalId: existente._id,
       });
       const guardado = await nuevo.save();
+      if (dto.password) {
+        await this.crearCuentaResidentePendiente(guardado, dto.password, existente._id);
+      }
       return { status: 'pendiente_actualizacion', censo: guardado };
     }
 
@@ -191,7 +198,52 @@ export class CensoService {
       estado: 'pendiente',
     });
     const guardado = await nuevo.save();
+    if (dto.password) {
+      await this.crearCuentaResidentePendiente(guardado, dto.password);
+    }
     return { status: 'pendiente', censo: guardado };
+  }
+
+  private async crearCuentaResidentePendiente(
+    censo: CensoUnidadDocument,
+    rawPassword: string,
+    unidadOriginalId?: Types.ObjectId,
+  ) {
+    try {
+      const persona =
+        censo.personas?.find((p) => p.esContactoPrincipal && p.email) ||
+        censo.personas?.find((p) => p.email);
+
+      if (!persona || !persona.email) return;
+
+      const email = persona.email.trim().toLowerCase();
+      const hashed = await bcrypt.hash(rawPassword, 10);
+      const targetUnidadId = unidadOriginalId || censo._id;
+
+      let cuenta = await this.propietarioModel.findOne({ email });
+      if (cuenta) {
+        cuenta.password = hashed;
+        if (targetUnidadId) cuenta.censoUnidadId = targetUnidadId;
+        cuenta.estado = 'pendiente_aprobacion';
+        if (persona.nombreCompleto) cuenta.nombre = persona.nombreCompleto;
+        if (persona.telefono) cuenta.telefono = persona.telefono;
+        await cuenta.save();
+      } else {
+        await this.propietarioModel.create({
+          nombre: persona.nombreCompleto || 'Residente',
+          email,
+          password: hashed,
+          edificioId: censo.edificioId,
+          censoUnidadId: targetUnidadId,
+          tipoResidente: persona.condicion || 'propietario',
+          estado: 'pendiente_aprobacion',
+          telefono: persona.telefono,
+          esContactoPrincipal: true,
+        });
+      }
+    } catch {
+      // Ignorar para no fallar el censo
+    }
   }
 
   async findAll(
@@ -465,6 +517,12 @@ export class CensoService {
         original.tipoOcupacion = item.tipoOcupacion;
         await original.save();
 
+        // Activar cuentas de residentes vinculadas
+        await this.propietarioModel.updateMany(
+          { censoUnidadId: original._id, estado: 'pendiente_aprobacion' },
+          { estado: 'activo' },
+        );
+
         // Eliminar la solicitud de actualización temporal
         await this.censoModel.deleteOne({ _id: item._id });
         return original;
@@ -473,13 +531,23 @@ export class CensoService {
 
     // Si es pendiente simple
     item.estado = 'aprobado';
-    return item.save();
+    const saved = await item.save();
+    await this.propietarioModel.updateMany(
+      { censoUnidadId: saved._id, estado: 'pendiente_aprobacion' },
+      { estado: 'activo' },
+    );
+    return saved;
   }
 
   async rechazar(id: string, edificioId: string): Promise<CensoUnidadDocument> {
     const item = await this.findOne(id, edificioId);
     item.estado = 'rechazado';
-    return item.save();
+    const saved = await item.save();
+    await this.propietarioModel.updateMany(
+      { censoUnidadId: saved._id, estado: 'pendiente_aprobacion' },
+      { estado: 'inactivo' },
+    );
+    return saved;
   }
 
   async getStats(edificioId: string): Promise<CensoStats> {
