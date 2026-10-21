@@ -884,9 +884,75 @@ export class CensoService {
       const mascotasAsignadas = mascotasPorUnidad.get(unitKey) || mascotasPorUnidad.get(identificador.toLowerCase()) || [];
       const vehiculosAsignados = vehiculosPorUnidad.get(unitKey) || vehiculosPorUnidad.get(identificador.toLowerCase()) || [];
 
-      if (personasAsignadas.length > 0 || vehiculosAsignados.length > 0) {
+      // Sanitización defensiva y autorreparación para importación masiva de copropiedades
+      const personasMap = new Map<string, any>();
+      for (const p of personasAsignadas) {
+        const nomNorm = (p.nombreCompleto || '').trim();
+        if (!nomNorm) continue;
+        const key = p.documento ? `doc_${String(p.documento).trim()}` : `name_${nomNorm.toLowerCase()}`;
+        if (!personasMap.has(key)) {
+          personasMap.set(key, { ...p, nombreCompleto: nomNorm });
+        } else {
+          const exist = personasMap.get(key);
+          if (!exist.telefono && p.telefono) exist.telefono = p.telefono;
+          if (!exist.email && p.email) exist.email = p.email;
+          if (!exist.documento && p.documento) exist.documento = p.documento;
+          if (!exist.fechaNacimiento && p.fechaNacimiento) exist.fechaNacimiento = p.fechaNacimiento;
+        }
+      }
+      const personasLimpias = Array.from(personasMap.values());
+
+      // Sanitizar emails y teléfonos para que notas libres o formatos irregulares no revienten el lote
+      for (const p of personasLimpias) {
+        if (p.email) {
+          const emailTrim = String(p.email).trim().toLowerCase().replace(/\s+/g, '');
+          if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+            p.email = emailTrim;
+          } else {
+            p.email = undefined;
+          }
+        }
+        if (p.telefono) {
+          const telDigits = String(p.telefono).replace(/\D/g, '');
+          if (telDigits.length >= 7 && telDigits.length <= 15) {
+            p.telefono = telDigits;
+          } else {
+            p.telefono = undefined;
+          }
+        }
+      }
+
+      // Garantizar estricto UN ÚNICO contacto principal por unidad residencial
+      let contactoPrincipalAsignado = false;
+      for (const p of personasLimpias) {
+        if (p.esContactoPrincipal) {
+          if (!contactoPrincipalAsignado) {
+            contactoPrincipalAsignado = true;
+          } else {
+            p.esContactoPrincipal = false;
+          }
+        }
+      }
+      if (!contactoPrincipalAsignado && personasLimpias.length > 0) {
+        personasLimpias[0].esContactoPrincipal = true;
+      }
+
+      // Sanitizar vehículos: si la placa trae textos descriptivos o formato irregular, limpiar
+      const vehiculosLimpios: any[] = [];
+      for (const v of vehiculosAsignados) {
+        const placaLimpia = String(v.placa || '').trim().toUpperCase().replace(/[\s\-]/g, '');
+        if (placaLimpia.length >= 5 && placaLimpia.length <= 8) {
+          vehiculosLimpios.push({ ...v, placa: placaLimpia });
+        } else if (v.tipo === 'bicicleta') {
+          vehiculosLimpios.push({ ...v, placa: 'BIC-SN' });
+        } else if (v.tipo || v.marca || v.modelo) {
+          vehiculosLimpios.push({ ...v, placa: undefined });
+        }
+      }
+
+      if (personasLimpias.length > 0 || vehiculosLimpios.length > 0) {
         this.validarPersonasYVehiculos(
-          { personas: personasAsignadas, vehiculos: vehiculosAsignados },
+          { personas: personasLimpias, vehiculos: vehiculosLimpios },
           { fechaNacimientoOpcional: true },
         );
       }
@@ -923,9 +989,9 @@ export class CensoService {
         if (item.coeficiente !== undefined) updateFields.coeficiente = item.coeficiente;
         if (parqueaderosAsignados.length > 0) updateFields.parqueaderosAsignados = parqueaderosAsignados;
         if (bodegasAsignadas.length > 0) updateFields.bodegasAsignadas = bodegasAsignadas;
-        if (personasAsignadas.length > 0) updateFields.personas = personasAsignadas;
+        if (personasLimpias.length > 0) updateFields.personas = personasLimpias;
         if (mascotasAsignadas.length > 0) updateFields.mascotas = mascotasAsignadas;
-        if (vehiculosAsignados.length > 0) updateFields.vehiculos = vehiculosAsignados;
+        if (vehiculosLimpios.length > 0) updateFields.vehiculos = vehiculosLimpios;
 
         censoBulkOps.push({
           updateOne: {
@@ -954,9 +1020,9 @@ export class CensoService {
               tipoOcupacion,
               parqueaderosAsignados,
               bodegasAsignadas,
-              personas: personasAsignadas,
+              personas: personasLimpias,
               mascotas: mascotasAsignadas,
-              vehiculos: vehiculosAsignados,
+              vehiculos: vehiculosLimpios,
               estado: 'aprobado',
             },
           },
