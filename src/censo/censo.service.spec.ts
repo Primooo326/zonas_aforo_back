@@ -28,6 +28,7 @@ describe('CensoService', () => {
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
       deleteOne: jest.fn(),
+      bulkWrite: jest.fn().mockResolvedValue({ ok: 1 }),
       exec: jest.fn(),
     };
 
@@ -37,6 +38,7 @@ describe('CensoService', () => {
       findOneAndUpdate: jest.fn(),
       updateMany: jest.fn(),
       deleteMany: jest.fn(),
+      bulkWrite: jest.fn().mockResolvedValue({ ok: 1 }),
       exec: jest.fn(),
     };
 
@@ -46,6 +48,7 @@ describe('CensoService', () => {
       findOneAndUpdate: jest.fn(),
       updateMany: jest.fn(),
       deleteMany: jest.fn(),
+      bulkWrite: jest.fn().mockResolvedValue({ ok: 1 }),
       exec: jest.fn(),
     };
 
@@ -490,4 +493,123 @@ describe('CensoService', () => {
       expect(res).toEqual(mockList);
     });
   });
+
+  describe('importarMasivo (Carga de Copropiedades y Casos Límite)', () => {
+    const edificioId = new Types.ObjectId().toString();
+
+    beforeEach(() => {
+      mockCensoModel.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+    });
+
+    it('debe autocoregregir menores de edad a convivientes y asegurar contacto principal adulto', async () => {
+      const fechaMenor = new Date();
+      fechaMenor.setFullYear(fechaMenor.getFullYear() - 15);
+      const fechaAdulto = new Date();
+      fechaAdulto.setFullYear(fechaAdulto.getFullYear() - 52);
+
+      const dto = {
+        inmuebles: [
+          { numeroApto: '301', torre: 'Torre 1', coeficiente: 0.0014, tipoOcupacion: 'habitada' },
+        ],
+        residentes: [
+          {
+            torre: 'Torre 1',
+            apto: '301',
+            nombreCompleto: 'SAMUEL BUSTAMANTE',
+            condicion: 'propietario' as const,
+            esContactoPrincipal: true,
+            fechaNacimiento: fechaMenor.toISOString().split('T')[0],
+          },
+          {
+            torre: 'Torre 1',
+            apto: '301',
+            nombreCompleto: 'YON JAIRO BUSTAMANTE',
+            condicion: 'propietario' as const,
+            esContactoPrincipal: false,
+            fechaNacimiento: fechaAdulto.toISOString().split('T')[0],
+          },
+        ],
+      };
+
+      const res = await service.importarMasivo(edificioId, dto as any);
+      expect(res.inmueblesCreados).toBe(1);
+
+      expect(mockCensoModel.bulkWrite).toHaveBeenCalledTimes(1);
+      const ops = mockCensoModel.bulkWrite.mock.calls[0][0];
+      expect(ops).toHaveLength(1);
+      const doc = ops[0].insertOne.document;
+
+      const menor = doc.personas.find((p: any) => p.nombreCompleto === 'SAMUEL BUSTAMANTE');
+      const adulto = doc.personas.find((p: any) => p.nombreCompleto === 'YON JAIRO BUSTAMANTE');
+
+      expect(menor.condicion).toBe('conviviente');
+      expect(menor.esContactoPrincipal).toBe(false);
+      expect(adulto.condicion).toBe('propietario');
+      expect(adulto.esContactoPrincipal).toBe(true);
+    });
+
+    it('debe sanitizar placas vehiculares (incluyendo placas de 3 a 10 caracteres y fallbacks)', async () => {
+      const dto = {
+        inmuebles: [
+          { numeroApto: '101', torre: '1', tipoOcupacion: 'habitada' },
+        ],
+        vehiculos: [
+          { torre: 'Torre 1', apto: '101', tipo: 'carro', placa: 'ABC-123' },
+          { torre: 'Torre 1', apto: '101', tipo: 'carro', placa: 'CYS' },
+          { torre: 'Torre 1', apto: '101', tipo: 'moto', placa: 'ELECTRICA' },
+          { torre: 'Torre 1', apto: '101', tipo: 'bicicleta' },
+          { torre: 'Torre 1', apto: '101', tipo: 'carro', marca: 'GRIS', color: 'CXC-190' },
+        ],
+      };
+
+      const res = await service.importarMasivo(edificioId, dto as any);
+      expect(res.inmueblesCreados).toBe(1);
+
+      const ops = mockCensoModel.bulkWrite.mock.calls[0][0];
+      const doc = ops[0].insertOne.document;
+      expect(doc.vehiculos).toHaveLength(5);
+
+      const placas = doc.vehiculos.map((v: any) => v.placa);
+      expect(placas).toContain('ABC123');
+      expect(placas).toContain('CYS');
+      expect(placas).toContain('ELECTRICA');
+      expect(placas).toContain('BICSN');
+      expect(placas).toContain('CXC190');
+
+      for (const v of doc.vehiculos) {
+        expect(typeof v.placa).toBe('string');
+        expect(v.placa.length).toBeGreaterThanOrEqual(3);
+        expect(v.placa.length).toBeLessThanOrEqual(10);
+      }
+    });
+
+    it('debe omitir filas vacías de parqueaderos, bodegas y vehículos sin lanzar error', async () => {
+      const dto = {
+        inmuebles: [
+          { numeroApto: '102', torre: '1', tipoOcupacion: 'habitada' },
+        ],
+        parqueaderos: [
+          { numeroParqueadero: '', torreAsignada: '1', aptoAsignado: '102' },
+        ],
+        bodegas: [
+          { numeroBodega: '   ', torreAsignada: '1', aptoAsignado: '102' },
+        ],
+        vehiculos: [
+          { torre: 'Torre 1', apto: '102', tipo: '', placa: '' },
+        ],
+      };
+
+      const res = await service.importarMasivo(edificioId, dto as any);
+      expect(res.inmueblesCreados).toBe(1);
+
+      const ops = mockCensoModel.bulkWrite.mock.calls[0][0];
+      const doc = ops[0].insertOne.document;
+      expect(doc.vehiculos).toHaveLength(0);
+      expect(mockParqueaderoModel.bulkWrite).not.toHaveBeenCalled();
+      expect(mockBodegaModel.bulkWrite).not.toHaveBeenCalled();
+    });
+  });
+
 });

@@ -131,13 +131,14 @@ export class CensoService {
 
     if (dto.vehiculos && Array.isArray(dto.vehiculos)) {
       for (const v of dto.vehiculos) {
-        if (v.placa && v.placa.trim()) {
-          const placaLimpia = v.placa.trim().toUpperCase().replace(/[\s\-]/g, '');
-          if (placaLimpia.length < 5 || placaLimpia.length > 8) {
-            throw new BadRequestException(`La placa vehicular "${v.placa}" debe tener entre 5 y 8 caracteres alfanuméricos`);
-          }
-          v.placa = placaLimpia;
+        if (!v.placa || !String(v.placa).trim()) {
+          throw new BadRequestException('La placa vehicular es obligatoria para cada vehículo registrado');
         }
+        const placaLimpia = String(v.placa).trim().toUpperCase().replace(/[\s\-]/g, '');
+        if (placaLimpia.length < 3 || placaLimpia.length > 10) {
+          throw new BadRequestException(`La placa vehicular "${v.placa}" debe tener entre 3 y 10 caracteres alfanuméricos`);
+        }
+        v.placa = placaLimpia;
       }
     }
   }
@@ -633,12 +634,13 @@ export class CensoService {
     const parqBulkOps: any[] = [];
     if (dto.parqueaderos && Array.isArray(dto.parqueaderos)) {
       for (const p of dto.parqueaderos) {
+        if (!p.numeroParqueadero || !String(p.numeroParqueadero).trim()) continue;
         const torreNorm = normalizarTorre(p.torreAsignada);
         const aptoNorm = (p.aptoAsignado !== undefined && p.aptoAsignado !== null ? String(p.aptoAsignado) : '').trim();
         const key = `${torreNorm.toLowerCase()}_${aptoNorm.toLowerCase()}`;
         const rawTipo = (p.tipo || 'carro').trim().toLowerCase();
         const tipoParq = rawTipo.includes('moto') ? 'moto' : rawTipo.includes('bici') ? 'bicicleta' : 'carro';
-        const numParq = p.numeroParqueadero.trim().toUpperCase();
+        const numParq = String(p.numeroParqueadero).trim().toUpperCase();
 
         if (!parqueaderosPorUnidad.has(key)) {
           parqueaderosPorUnidad.set(key, []);
@@ -684,10 +686,11 @@ export class CensoService {
     const bodegaBulkOps: any[] = [];
     if (dto.bodegas && Array.isArray(dto.bodegas)) {
       for (const b of dto.bodegas) {
+        if (!b.numeroBodega || !String(b.numeroBodega).trim()) continue;
         const torreNorm = normalizarTorre(b.torreAsignada);
         const aptoNorm = (b.aptoAsignado !== undefined && b.aptoAsignado !== null ? String(b.aptoAsignado) : '').trim();
         const key = `${torreNorm.toLowerCase()}_${aptoNorm.toLowerCase()}`;
-        const numBodega = b.numeroBodega.trim().toUpperCase();
+        const numBodega = String(b.numeroBodega).trim().toUpperCase();
 
         if (!bodegasPorUnidad.has(key)) {
           bodegasPorUnidad.set(key, []);
@@ -731,6 +734,7 @@ export class CensoService {
     const residentesPorUnidad = new Map<string, any[]>();
     if (dto.residentes && Array.isArray(dto.residentes)) {
       for (const r of dto.residentes) {
+        if (!r.nombreCompleto || !String(r.nombreCompleto).trim()) continue;
         const torreNorm = normalizarTorre(r.torre);
         const aptoNorm = (r.apto !== undefined && r.apto !== null ? String(r.apto) : '').trim();
         const key = `${torreNorm.toLowerCase()}_${aptoNorm.toLowerCase()}`;
@@ -773,6 +777,7 @@ export class CensoService {
     const mascotasPorUnidad = new Map<string, any[]>();
     if (dto.mascotas && Array.isArray(dto.mascotas)) {
       for (const m of dto.mascotas) {
+        if (!m.nombre || !String(m.nombre).trim()) continue;
         const torreNorm = normalizarTorre(m.torre);
         const aptoNorm = (m.apto !== undefined && m.apto !== null ? String(m.apto) : '').trim();
         const key = `${torreNorm.toLowerCase()}_${aptoNorm.toLowerCase()}`;
@@ -824,14 +829,33 @@ export class CensoService {
               ? 'carro'
               : (['carro', 'moto', 'bicicleta', 'otro'].includes(rawTipo) ? rawTipo : 'otro');
 
-        let placa = v.placa?.trim().toUpperCase().replace(/[\s\-]/g, '');
-        if (!placa && tipoVehiculo === 'bicicleta') {
-          placa = 'BIC-SN';
+        let rawPlaca = String(v.placa || '').trim().toUpperCase().replace(/[\s\-]/g, '');
+        // Detección si la placa vino anotada en color o marca
+        if (!rawPlaca && v.color && /^[A-Z]{3}\-?[0-9]{2}[0-9A-Z]?$/i.test(String(v.color).trim())) {
+          rawPlaca = String(v.color).trim().toUpperCase().replace(/[\s\-]/g, '');
+        } else if (!rawPlaca && v.marca && /^[A-Z]{3}\-?[0-9]{2}[0-9A-Z]?$/i.test(String(v.marca).trim())) {
+          rawPlaca = String(v.marca).trim().toUpperCase().replace(/[\s\-]/g, '');
+        }
+
+        let placaFinal = rawPlaca;
+        if (placaFinal.length >= 3 && placaFinal.length <= 10) {
+          // Directa válida
+        } else if (placaFinal.length > 10) {
+          placaFinal = placaFinal.slice(0, 10);
+        } else if (tipoVehiculo === 'bicicleta') {
+          placaFinal = 'BIC-SN';
+        } else if (tipoVehiculo === 'moto') {
+          placaFinal = `MOT-SN${aptoNorm ? `-${aptoNorm}` : ''}`.slice(0, 10);
+        } else if (v.marca || v.color || v.modelo) {
+          placaFinal = `VEH-SN${aptoNorm ? `-${aptoNorm}` : ''}`.slice(0, 10);
+        } else {
+          // Fila sin placa ni datos del vehículo: omitir
+          continue;
         }
 
         const vehItem = {
           tipo: tipoVehiculo,
-          placa: placa || undefined,
+          placa: placaFinal,
           marca: v.marca?.trim() || undefined,
           modelo: v.modelo?.trim() || undefined,
           color: v.color?.trim() || undefined,
@@ -968,17 +992,36 @@ export class CensoService {
         }
       }
 
-      // Sanitizar vehículos: si la placa trae textos descriptivos o formato irregular, limpiar
+      // Sanitizar vehículos: garantizar que TODO vehículo tenga una placa válida y nunca undefined
       const vehiculosLimpios: any[] = [];
       for (const v of vehiculosAsignados) {
-        const placaLimpia = String(v.placa || '').trim().toUpperCase().replace(/[\s\-]/g, '');
-        if (placaLimpia.length >= 5 && placaLimpia.length <= 8) {
-          vehiculosLimpios.push({ ...v, placa: placaLimpia });
-        } else if (v.tipo === 'bicicleta') {
-          vehiculosLimpios.push({ ...v, placa: 'BIC-SN' });
-        } else if (v.tipo || v.marca || v.modelo) {
-          vehiculosLimpios.push({ ...v, placa: undefined });
+        let rawPlaca = String(v.placa || '').trim().toUpperCase().replace(/[\s\-]/g, '');
+        if (!rawPlaca && v.color && /^[A-Z]{3}\-?[0-9]{2}[0-9A-Z]?$/i.test(String(v.color).trim())) {
+          rawPlaca = String(v.color).trim().toUpperCase().replace(/[\s\-]/g, '');
+        } else if (!rawPlaca && v.marca && /^[A-Z]{3}\-?[0-9]{2}[0-9A-Z]?$/i.test(String(v.marca).trim())) {
+          rawPlaca = String(v.marca).trim().toUpperCase().replace(/[\s\-]/g, '');
         }
+
+        let placaFinal = rawPlaca;
+        if (placaFinal.length >= 3 && placaFinal.length <= 10) {
+          // Directa válida
+        } else if (placaFinal.length > 10) {
+          placaFinal = placaFinal.slice(0, 10);
+        } else if (v.tipo === 'bicicleta') {
+          placaFinal = 'BIC-SN';
+        } else if (v.tipo === 'moto') {
+          placaFinal = `MOT-SN${numeroApto ? `-${numeroApto}` : ''}`.slice(0, 10);
+        } else if (v.marca || v.color || v.modelo) {
+          placaFinal = `VEH-SN${numeroApto ? `-${numeroApto}` : ''}`.slice(0, 10);
+        } else {
+          // Fila sin placa ni características de vehículo: omitir
+          continue;
+        }
+
+        vehiculosLimpios.push({
+          ...v,
+          placa: placaFinal,
+        });
       }
 
       if (personasLimpias.length > 0 || vehiculosLimpios.length > 0) {
