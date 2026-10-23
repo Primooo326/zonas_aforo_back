@@ -14,6 +14,8 @@ import { InmueblesModule } from './inmuebles/inmuebles.module';
 import { PropietariosModule } from './propietarios/propietarios.module';
 import { CensoModule } from './censo/censo.module';
 import { PortalModule } from './portal/portal.module';
+import { VigilantesModule } from './vigilantes/vigilantes.module';
+import { PorteriaModule } from './porteria/porteria.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { PortalModule } from './portal/portal.module';
     PropietariosModule,
     CensoModule,
     PortalModule,
+    VigilantesModule,
+    PorteriaModule,
   ],
   providers: [],
 })

@@ -8,6 +8,7 @@ import { Edificio, EdificioSchema } from '../edificios/edificio.schema';
 import { Reserva, ReservaSchema } from '../reservas/reserva.schema';
 import { ReservasModule } from '../reservas/reservas.module';
 import { ZonasModule } from '../zonas/zonas.module';
+import { PorteriaModule } from '../porteria/porteria.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ZonasModule } from '../zonas/zonas.module';
     ]),
     ReservasModule,
     ZonasModule,
+    PorteriaModule,
   ],
   controllers: [PortalController],
   providers: [PortalService],

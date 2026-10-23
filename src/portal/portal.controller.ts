@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PortalService } from './portal.service';
 import { SolicitudActualizacionDto } from './dto/solicitud-actualizacion.dto';
 import { CrearReservaPortalDto } from './dto/crear-reserva-portal.dto';
+import { CrearPreRegistroDto } from '../porteria/visitas/dto/preregistro-visita.dto';
 
 @Controller('portal')
 @UseGuards(JwtAuthGuard)
@@ -77,5 +78,37 @@ export class PortalController {
   async cancelarReserva(@Request() req: any, @Param('id') id: string) {
     this.checkPropietarioRole(req);
     return this.portalService.cancelarReserva(req.user.id, id);
+  }
+
+  @Get('paquetes')
+  async getPaquetes(@Request() req: any) {
+    this.checkPropietarioRole(req);
+    return this.portalService.getPaquetes(req.user.id);
+  }
+
+  @Get('visitas')
+  async getVisitas(@Request() req: any) {
+    this.checkPropietarioRole(req);
+    return this.portalService.getVisitas(req.user.id);
+  }
+
+  // --- Pre-registros y Pases QR para el Residente ---
+
+  @Get('pases')
+  async getPases(@Request() req: any) {
+    this.checkPropietarioRole(req);
+    return this.portalService.getPreRegistros(req.user.id);
+  }
+
+  @Post('pases')
+  async crearPase(@Request() req: any, @Body() dto: CrearPreRegistroDto) {
+    this.checkPropietarioRole(req);
+    return this.portalService.crearPreRegistro(req.user.id, dto);
+  }
+
+  @Delete('pases/:id')
+  async cancelarPase(@Request() req: any, @Param('id') id: string) {
+    this.checkPropietarioRole(req);
+    return this.portalService.cancelarPreRegistro(req.user.id, id);
   }
 }

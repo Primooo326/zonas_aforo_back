@@ -13,6 +13,12 @@ export class Edificio {
 
   @Prop({ required: true })
   password: string;
+
+  @Prop({ trim: true })
+  usuarioVigilancia?: string;
+
+  @Prop()
+  passwordVigilancia?: string;
 }
 
 export const EdificioSchema = SchemaFactory.createForClass(Edificio);

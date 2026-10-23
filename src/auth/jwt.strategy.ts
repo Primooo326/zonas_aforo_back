@@ -21,7 +21,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; role?: string; edificioId?: string }) {
+  async validate(payload: { sub: string; role?: string; edificioId?: string; nombreEdificio?: string }) {
+    if (payload.role === 'vigilancia') {
+      const edificio: any = await this.edificioModel.findById(payload.edificioId || payload.sub);
+      if (!edificio) throw new UnauthorizedException('Puesto de vigilancia no autorizado.');
+      return {
+        id: edificio._id.toString(),
+        edificioId: edificio._id.toString(),
+        nombre: `Puesto de Vigilancia - ${edificio.nombre}`,
+        role: 'vigilancia',
+      };
+    }
+
     if (payload.role === 'propietario') {
       const propietario: any = await this.propietarioModel.findById(payload.sub);
       if (!propietario) throw new UnauthorizedException();
@@ -34,6 +45,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         role: 'propietario',
       };
     }
+
     const edificio: any = await this.edificioModel.findById(payload.sub);
     if (edificio) {
       return {
@@ -44,6 +56,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         role: 'edificio',
       };
     }
+
     // Fallback: intentar como propietario si no es edificio
     const propietario: any = await this.propietarioModel.findById(payload.sub);
     if (propietario) {
@@ -56,6 +69,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         role: 'propietario',
       };
     }
+
     throw new UnauthorizedException();
   }
 }

@@ -12,8 +12,11 @@ import { Edificio, EdificioDocument } from '../edificios/edificio.schema';
 import { Reserva, ReservaDocument } from '../reservas/reserva.schema';
 import { ReservasService } from '../reservas/reservas.service';
 import { ZonasService } from '../zonas/zonas.service';
+import { PaquetesService } from '../porteria/paquetes/paquetes.service';
+import { VisitasService } from '../porteria/visitas/visitas.service';
 import { SolicitudActualizacionDto } from './dto/solicitud-actualizacion.dto';
 import { CrearReservaPortalDto } from './dto/crear-reserva-portal.dto';
+import { CrearPreRegistroDto } from '../porteria/visitas/dto/preregistro-visita.dto';
 
 @Injectable()
 export class PortalService {
@@ -28,6 +31,8 @@ export class PortalService {
     private readonly reservaModel: Model<ReservaDocument>,
     private readonly reservasService: ReservasService,
     private readonly zonasService: ZonasService,
+    private readonly paquetesService: PaquetesService,
+    private readonly visitasService: VisitasService,
   ) {}
 
   async getMe(propietarioId: string) {
@@ -69,8 +74,8 @@ export class PortalService {
     return {
       propietario,
       unidad,
-      solicitudPendiente,
       edificio,
+      solicitudPendiente,
     };
   }
 
@@ -83,66 +88,48 @@ export class PortalService {
       throw new BadRequestException('No tienes una unidad habitacional asociada');
     }
 
-    const original = await this.censoModel.findById(propietario.censoUnidadId);
-    if (!original) {
-      throw new NotFoundException('Inmueble original no encontrado');
+    const unidadOriginal = await this.censoModel.findById(
+      propietario.censoUnidadId,
+    );
+    if (!unidadOriginal) {
+      throw new NotFoundException('Unidad original no encontrada');
     }
 
-    const personasFormatted = dto.personas
-      ? dto.personas.map((p) => ({
-          ...p,
-          fechaNacimiento: p.fechaNacimiento ? new Date(p.fechaNacimiento) : undefined,
-        }))
-      : original.personas;
-
-    let pendiente = await this.censoModel.findOne({
-      unidadOriginalId: original._id,
+    const existentePendiente = await this.censoModel.findOne({
+      unidadOriginalId: new Types.ObjectId(propietario.censoUnidadId),
       estado: 'pendiente_actualizacion',
     });
 
-    if (pendiente) {
-      if (dto.tipoOcupacion) pendiente.tipoOcupacion = dto.tipoOcupacion as any;
-      if (dto.personas) pendiente.personas = personasFormatted as any;
-      if (dto.mascotas) pendiente.mascotas = dto.mascotas as any;
-      if (dto.vehiculos) pendiente.vehiculos = dto.vehiculos as any;
-      if (dto.motivoCambio) pendiente.notasAdministracion = dto.motivoCambio;
-      await pendiente.save();
-      return {
-        message: 'Solicitud de actualización modificada exitosamente.',
-        solicitud: pendiente,
-      };
+    if (existentePendiente) {
+      existentePendiente.personas = dto.personas as any;
+      existentePendiente.mascotas = dto.mascotas as any;
+      existentePendiente.vehiculos = dto.vehiculos as any;
+      existentePendiente.tipoOcupacion =
+        (dto.tipoOcupacion as any) || unidadOriginal.tipoOcupacion;
+      existentePendiente.notasAdministracion = `Actualizado por residente el ${new Date().toLocaleDateString()}`;
+      return existentePendiente.save();
     }
 
-    const nueva = new this.censoModel({
-      edificioId: original.edificioId,
-      identificador: original.identificador,
-      torre: original.torre,
-      numeroApto: original.numeroApto,
-      piso: original.piso,
-      cuartos: original.cuartos,
-      banos: original.banos,
-      tieneBalcon: original.tieneBalcon,
-      metrosCuadrados: original.metrosCuadrados,
-      tienePatio: original.tienePatio,
-      coeficiente: original.coeficiente,
-      parqueaderosAsignados: original.parqueaderosAsignados,
-      bodegasAsignadas: original.bodegasAsignadas,
-      tipoOcupacion: dto.tipoOcupacion || original.tipoOcupacion,
-      personas: personasFormatted,
-      mascotas: dto.mascotas || original.mascotas,
-      vehiculos: dto.vehiculos || original.vehiculos,
+    return this.censoModel.create({
+      edificioId: unidadOriginal.edificioId,
+      identificador: unidadOriginal.identificador,
+      torre: unidadOriginal.torre,
+      numeroApto: unidadOriginal.numeroApto,
+      piso: unidadOriginal.piso,
+      cuartos: unidadOriginal.cuartos,
+      banos: unidadOriginal.banos,
+      metrosCuadrados: unidadOriginal.metrosCuadrados,
+      coeficiente: unidadOriginal.coeficiente,
+      parqueaderosAsignados: unidadOriginal.parqueaderosAsignados,
+      bodegasAsignadas: unidadOriginal.bodegasAsignadas,
+      tipoOcupacion: (dto.tipoOcupacion as any) || unidadOriginal.tipoOcupacion,
+      personas: dto.personas as any,
+      mascotas: dto.mascotas as any,
+      vehiculos: dto.vehiculos as any,
       estado: 'pendiente_actualizacion',
-      unidadOriginalId: original._id,
-      notasAdministracion:
-        dto.motivoCambio || 'Actualización de datos solicitada por residente desde el portal',
-    });
-
-    const guardada = await nueva.save();
-
-    return {
-      message: 'Solicitud enviada a la administración para revisión.',
-      solicitud: guardada,
-    };
+      unidadOriginalId: unidadOriginal._id,
+      notasAdministracion: `Solicitud radicada por ${propietario.nombre} el ${new Date().toLocaleDateString()}`,
+    } as any);
   }
 
   async cancelarSolicitudActualizacion(propietarioId: string) {
@@ -151,25 +138,28 @@ export class PortalService {
       throw new BadRequestException('No tienes una unidad habitacional asociada');
     }
 
-    await this.censoModel.deleteMany({
-      unidadOriginalId: propietario.censoUnidadId,
+    const res = await this.censoModel.findOneAndDelete({
+      unidadOriginalId: new Types.ObjectId(propietario.censoUnidadId),
       estado: 'pendiente_actualizacion',
     });
 
-    return { message: 'Solicitud de actualización cancelada con éxito.' };
+    if (!res) {
+      throw new NotFoundException('No tienes ninguna solicitud pendiente');
+    }
+
+    return { success: true };
   }
 
   async getZonas(edificioId: string) {
-    return this.zonasService.findPublicByEdificio(edificioId);
+    return this.zonasService.findAll(edificioId);
   }
 
-  async getReservas(censoUnidadId: string, edificioId: string) {
+  async getReservas(censoUnidadId?: string, edificioId?: string) {
     if (!censoUnidadId) return [];
-
     return this.reservaModel
       .find({
-        edificioId: new Types.ObjectId(edificioId),
         censoUnidadId: new Types.ObjectId(censoUnidadId),
+        ...(edificioId ? { edificioId: new Types.ObjectId(edificioId) } : {}),
       })
       .populate('zonaId')
       .sort({ fecha: -1, horaInicio: -1 })
@@ -187,14 +177,19 @@ export class PortalService {
       throw new NotFoundException('Unidad habitacional no encontrada');
     }
 
-    if (unidad.tags?.includes('moroso')) {
+    // Regla de Negocio RN-02: Bloqueo a morosos
+    if (Array.isArray(unidad.tags) && unidad.tags.includes('moroso')) {
       throw new BadRequestException(
-        'Tu inmueble presenta un tag de mora en administración y tiene restringidas las reservas de zonas comunes.',
+        'Tu apartamento presenta restricciones por mora en cuotas de administración. Comunícate con la administración.',
       );
     }
 
-    const nombre = dto.nombreSolicitante || propietario.nombre;
-    const telefono = dto.telefonoContacto || propietario.telefono || '';
+    // Obtener datos del solicitante
+    const persona = unidad.personas?.find(
+      (p) => p.email?.toLowerCase() === propietario.email?.toLowerCase(),
+    );
+    const nombre = persona?.nombreCompleto || propietario.nombre;
+    const telefono = persona?.telefono || 'Sin teléfono';
     const torreInmueble =
       unidad.identificador ||
       `${unidad.torre ? unidad.torre + ' - ' : ''}Apto ${unidad.numeroApto || ''}`;
@@ -233,5 +228,72 @@ export class PortalService {
     }
 
     return this.reservasService.cancelar(reservaId);
+  }
+
+  // --- Integración con Casillero y Visitas para el Residente ---
+
+  async getPaquetes(propietarioId: string) {
+    const propietario = await this.propietarioModel.findById(propietarioId);
+    if (!propietario || !propietario.censoUnidadId) return [];
+    const unidad = await this.censoModel.findById(propietario.censoUnidadId);
+    if (!unidad) return [];
+    return this.paquetesService.listarParaResidente(
+      propietario.edificioId.toString(),
+      unidad.torre,
+      unidad.numeroApto,
+    );
+  }
+
+  async getVisitas(propietarioId: string) {
+    const propietario = await this.propietarioModel.findById(propietarioId);
+    if (!propietario || !propietario.censoUnidadId) return [];
+    const unidad = await this.censoModel.findById(propietario.censoUnidadId);
+    if (!unidad) return [];
+    return this.visitasService.listarParaResidente(
+      propietario.edificioId.toString(),
+      unidad.torre,
+      unidad.numeroApto,
+    );
+  }
+
+  async getPreRegistros(propietarioId: string) {
+    const propietario = await this.propietarioModel.findById(propietarioId);
+    if (!propietario) return [];
+    return this.visitasService.listarPreRegistrosParaResidente(
+      propietario.edificioId.toString(),
+      propietarioId,
+    );
+  }
+
+  async crearPreRegistro(propietarioId: string, dto: CrearPreRegistroDto) {
+    const propietario = await this.propietarioModel.findById(propietarioId);
+    if (!propietario || !propietario.censoUnidadId) {
+      throw new NotFoundException('Perfil de residente o unidad no encontrada');
+    }
+    const unidad = await this.censoModel.findById(propietario.censoUnidadId);
+    if (!unidad) {
+      throw new NotFoundException('Unidad censada no encontrada');
+    }
+    return this.visitasService.crearPreRegistro(
+      propietario.edificioId.toString(),
+      propietario.censoUnidadId.toString(),
+      unidad.torre || '',
+      unidad.numeroApto || '',
+      propietario.nombre || '',
+      propietarioId,
+      dto,
+    );
+  }
+
+  async cancelarPreRegistro(propietarioId: string, preRegistroId: string) {
+    const propietario = await this.propietarioModel.findById(propietarioId);
+    if (!propietario) {
+      throw new NotFoundException('Perfil de residente no encontrado');
+    }
+    return this.visitasService.cancelarPreRegistro(
+      propietario.edificioId.toString(),
+      propietarioId,
+      preRegistroId,
+    );
   }
 }

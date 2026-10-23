@@ -9,6 +9,8 @@ import { Edificio } from '../edificios/edificio.schema';
 import { Reserva } from '../reservas/reserva.schema';
 import { ReservasService } from '../reservas/reservas.service';
 import { ZonasService } from '../zonas/zonas.service';
+import { PaquetesService } from '../porteria/paquetes/paquetes.service';
+import { VisitasService } from '../porteria/visitas/visitas.service';
 
 describe('PortalService', () => {
   let service: PortalService;
@@ -92,6 +94,18 @@ describe('PortalService', () => {
         {
           provide: ZonasService,
           useValue: mockZonasService,
+        },
+        {
+          provide: PaquetesService,
+          useValue: {
+            listarParaResidente: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: VisitasService,
+          useValue: {
+            listarParaResidente: jest.fn().mockResolvedValue([]),
+          },
         },
       ],
     }).compile();
