@@ -3,6 +3,7 @@ import { PropietariosService } from './propietarios.service';
 import { RegisterPropietarioDto } from './dto/register-propietario.dto';
 import { LoginPropietarioDto } from './dto/login-propietario.dto';
 import { RegistroInvitacionDto } from './dto/registro-invitacion.dto';
+import { ActivarORecuperarDto } from './dto/activar-recuperar.dto';
 
 @Controller('auth/propietario')
 export class PropietariosController {
@@ -16,6 +17,11 @@ export class PropietariosController {
   @Post('registro-invitacion')
   registrarConInvitacion(@Body() dto: RegistroInvitacionDto) {
     return this.propietariosService.registrarConInvitacion(dto);
+  }
+
+  @Post('activar-o-recuperar')
+  activarORecuperar(@Body() dto: ActivarORecuperarDto) {
+    return this.propietariosService.activarORecuperar(dto);
   }
 
   @Post('register')

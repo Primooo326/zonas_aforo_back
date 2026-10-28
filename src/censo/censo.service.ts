@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -36,6 +38,12 @@ export interface CensoStats {
   pendientes: number;
 }
 
+export interface RateLimitInfo {
+  intentosFallidos: number;
+  primerFallo: number;
+  bloqueadoHasta?: number;
+}
+
 export function calcularEdad(fechaNacimiento: Date | string): number {
   const hoy = new Date();
   const nac = new Date(fechaNacimiento);
@@ -55,6 +63,12 @@ export function categorizarEdad(edad: number): 'menor' | 'adulto' | 'adulto_mayo
 
 @Injectable()
 export class CensoService {
+  // Rate limiting en memoria para validación de códigos de censo (Brute-Force Shield)
+  private readonly rateLimitFallidos = new Map<string, RateLimitInfo>();
+  private readonly MAX_INTENTOS_FALLIDOS = 20; // 20 intentos fallidos (muy generoso)
+  private readonly VENTANA_RATE_LIMIT_MS = 5 * 60 * 1000; // 5 minutos
+  private readonly TIEMPO_BLOQUEO_MS = 5 * 60 * 1000; // 5 minutos de bloqueo si supera el límite
+
   constructor(
     @InjectModel(CensoUnidad.name)
     private readonly censoModel: Model<CensoUnidadDocument>,
@@ -67,6 +81,60 @@ export class CensoService {
     @InjectModel(Propietario.name)
     private readonly propietarioModel: Model<PropietarioDocument>,
   ) {}
+
+  verificarRateLimit(ip?: string) {
+    if (!ip) return;
+    const now = Date.now();
+    const info = this.rateLimitFallidos.get(ip);
+    if (!info) return;
+
+    if (info.bloqueadoHasta && now < info.bloqueadoHasta) {
+      const segundosRestantes = Math.ceil((info.bloqueadoHasta - now) / 1000);
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          error: 'Too Many Requests',
+          message: `Demasiados intentos fallidos con códigos incorrectos. Por seguridad, espera ${segundosRestantes} segundos antes de intentar nuevamente.`,
+          retryAfter: segundosRestantes,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (now - info.primerFallo > this.VENTANA_RATE_LIMIT_MS) {
+      this.rateLimitFallidos.delete(ip);
+    }
+  }
+
+  registrarIntentoFallido(ip?: string) {
+    if (!ip) return;
+    const now = Date.now();
+    const info = this.rateLimitFallidos.get(ip) || { intentosFallidos: 0, primerFallo: now };
+
+    if (now - info.primerFallo > this.VENTANA_RATE_LIMIT_MS) {
+      info.intentosFallidos = 1;
+      info.primerFallo = now;
+      delete info.bloqueadoHasta;
+    } else {
+      info.intentosFallidos++;
+    }
+
+    if (info.intentosFallidos >= this.MAX_INTENTOS_FALLIDOS) {
+      info.bloqueadoHasta = now + this.TIEMPO_BLOQUEO_MS;
+    }
+
+    this.rateLimitFallidos.set(ip, info);
+  }
+
+  limpiarIntentosFallidos(ip?: string) {
+    if (!ip) return;
+    this.rateLimitFallidos.delete(ip);
+  }
+
+  getRateLimitStatus(ip?: string) {
+    if (!ip) return null;
+    return this.rateLimitFallidos.get(ip) || null;
+  }
 
   private validarPersonasYVehiculos(
     dto: { personas?: any[]; vehiculos?: any[] },
@@ -153,8 +221,111 @@ export class CensoService {
     return data;
   }
 
+  private async validarParqueaderosVehiculos(
+    edificioId: string,
+    dto: { identificador?: string; torre?: string; numeroApto?: string; vehiculos?: any[] },
+    unidadOriginalId?: Types.ObjectId | string,
+  ) {
+    if (!dto.vehiculos || !Array.isArray(dto.vehiculos) || dto.vehiculos.length === 0) return;
+
+    const edificioObjId = new Types.ObjectId(edificioId);
+    const identificadorNormalizado = (dto.identificador || '').trim().toLowerCase();
+    const aptoNormalizado = (dto.numeroApto || '').trim().toLowerCase();
+    const torreNormalizada = (dto.torre || '').trim().toLowerCase();
+
+    // 1. Detectar si en el mismo formulario dos vehículos reclaman el mismo parqueadero
+    const vistos = new Set<string>();
+    for (const v of dto.vehiculos) {
+      if (!v.numeroParqueadero || !String(v.numeroParqueadero).trim()) continue;
+      const numUpper = String(v.numeroParqueadero).trim().toUpperCase();
+      if (vistos.has(numUpper)) {
+        throw new BadRequestException(
+          `El parqueadero "${numUpper}" está asignado a más de un vehículo en la misma solicitud. Cada vehículo debe contar con un espacio exclusivo.`,
+        );
+      }
+      vistos.add(numUpper);
+    }
+
+    if (vistos.size === 0) return;
+
+    // 2. Consultar en parqueaderoModel si alguno de los números está asignado a OTRA unidad
+    if (this.parqueaderoModel && typeof (this.parqueaderoModel as any).find === 'function') {
+      const q = this.parqueaderoModel.find({
+        edificioId: edificioObjId,
+        numero: { $in: Array.from(vistos) },
+      });
+      const parqueaderos: any[] = typeof (q as any)?.lean === 'function' ? await (q as any).lean() : await q;
+
+      if (Array.isArray(parqueaderos)) {
+        for (const p of parqueaderos) {
+          const num = String(p.numero || '').trim().toUpperCase();
+          const pApto = String(p.aptoAsignado || '').trim().toLowerCase();
+          const pTorre = String(p.torreAsignada || '').trim().toLowerCase();
+
+          // Un parqueadero de visitantes nunca puede asignarse a un vehículo residente
+          if (p.esVisitante) {
+            throw new BadRequestException(
+              `El parqueadero "${num}" está reservado exclusivamente para visitantes. No puede asignarse a un vehículo residente.`,
+            );
+          }
+
+          // Si el parqueadero no tiene apartamento asignado, está libre
+          if (!pApto) continue;
+
+          // Si tiene apartamento asignado, verificar si coincide con el inmueble actual
+          const coincideApto = aptoNormalizado && pApto === aptoNormalizado;
+          const coincideIdentificador = identificadorNormalizado && (
+            identificadorNormalizado.includes(pApto) ||
+            (pTorre && identificadorNormalizado.includes(pTorre) && identificadorNormalizado.includes(pApto))
+          );
+          const coincideTorre = !torreNormalizada || !pTorre || torreNormalizada === pTorre || identificadorNormalizado.includes(pTorre);
+
+          const esDelMismoInmueble = (coincideApto && coincideTorre) || coincideIdentificador;
+
+          if (!esDelMismoInmueble) {
+            const asignadoA = [p.torreAsignada, p.aptoAsignado ? `Apto ${p.aptoAsignado}` : ''].filter(Boolean).join(' ') || 'otro inmueble';
+            throw new BadRequestException(
+              `El parqueadero "${num}" ya se encuentra asignado a ${asignadoA}. Un parqueadero no puede pertenecer a dos inmuebles a la vez.`,
+            );
+          }
+        }
+      }
+    }
+
+    // 3. Consultar si otra unidad aprobada en el censo ya tiene este parqueadero registrado
+    if (this.censoModel && typeof (this.censoModel as any).find === 'function') {
+      const qOtras = this.censoModel.find({
+        edificioId: edificioObjId,
+        estado: 'aprobado',
+        $or: [
+          { 'parqueaderosAsignados.numero': { $in: Array.from(vistos) } },
+          { 'vehiculos.numeroParqueadero': { $in: Array.from(vistos) } },
+        ],
+      });
+      const otrasUnidades: any[] = typeof (qOtras as any)?.lean === 'function' ? await (qOtras as any).lean() : await qOtras;
+
+      if (Array.isArray(otrasUnidades)) {
+        for (const otra of otrasUnidades) {
+          if (unidadOriginalId && String(otra._id) === String(unidadOriginalId)) continue;
+          if (identificadorNormalizado && otra.identificador?.trim().toLowerCase() === identificadorNormalizado) continue;
+
+          for (const num of vistos) {
+            const tieneEnAsignados = otra.parqueaderosAsignados?.some((pa: any) => String(pa.numero || '').trim().toUpperCase() === num);
+            const tieneEnVehiculos = otra.vehiculos?.some((vh: any) => String(vh.numeroParqueadero || '').trim().toUpperCase() === num);
+            if (tieneEnAsignados || tieneEnVehiculos) {
+              throw new BadRequestException(
+                `El parqueadero "${num}" ya se encuentra registrado en el inmueble "${otra.identificador}". Un parqueadero no puede pertenecer a dos inmuebles a la vez.`,
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
   async create(edificioId: string, dto: CreateCensoDto): Promise<CensoUnidad> {
     this.validarPersonasYVehiculos(dto);
+    await this.validarParqueaderosVehiculos(edificioId, dto);
     const data = this.normalizarVehiculos({ ...dto });
     const censo = new this.censoModel({
       ...data,
@@ -169,6 +340,7 @@ export class CensoService {
     dto: PublicCensoDto,
   ): Promise<{ status: 'pendiente' | 'pendiente_actualizacion'; censo: CensoUnidad }> {
     this.validarPersonasYVehiculos(dto);
+    await this.validarParqueaderosVehiculos(edificioId, dto);
     const data = this.normalizarVehiculos({ ...dto });
     const edificioObjId = new Types.ObjectId(edificioId);
 
@@ -180,6 +352,22 @@ export class CensoService {
     });
 
     if (existente) {
+      const pendienteExistente = await this.censoModel.findOne({
+        edificioId: edificioObjId,
+        unidadOriginalId: existente._id,
+        estado: 'pendiente_actualizacion',
+      });
+
+      if (pendienteExistente) {
+        Object.assign(pendienteExistente, data);
+        pendienteExistente.estado = 'pendiente_actualizacion';
+        const guardado = await pendienteExistente.save();
+        if (dto.password) {
+          await this.crearCuentaResidentePendiente(guardado, dto.password, existente._id);
+        }
+        return { status: 'pendiente_actualizacion', censo: guardado };
+      }
+
       const nuevo = new this.censoModel({
         ...data,
         edificioId: edificioObjId,
@@ -305,6 +493,7 @@ export class CensoService {
     dto: UpdateCensoDto,
   ): Promise<CensoUnidadDocument> {
     this.validarPersonasYVehiculos(dto);
+    await this.validarParqueaderosVehiculos(edificioId, dto, id);
     const data = this.normalizarVehiculos({ ...dto });
 
     // Obtener la unidad antes de actualizar para comparar asignaciones
@@ -1171,27 +1360,314 @@ export class CensoService {
     return { success: true, message: 'Inventario y censo del edificio reseteados con éxito' };
   }
 
+  generarCodigo5Letras(excluidos: Set<string> = new Set()): string {
+    const letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    for (let intento = 0; intento < 200; intento++) {
+      const bytes = randomBytes(5);
+      let codigo = '';
+      for (let i = 0; i < 5; i++) {
+        codigo += letras[bytes[i] % letras.length];
+      }
+      if (!excluidos.has(codigo)) {
+        excluidos.add(codigo);
+        return codigo;
+      }
+    }
+    return 'CENSO';
+  }
+
+  private extraerContactoPrincipal(unidad?: any) {
+    const personas: PersonaCenso[] = Array.isArray(unidad?.personas) ? unidad.personas : [];
+    const principal =
+      personas.find((p) => p.esContactoPrincipal) ||
+      personas.find((p) => p.condicion === 'propietario') ||
+      personas[0];
+    return {
+      titularNombre: principal?.nombreCompleto || '',
+      titularEmail: principal?.email || '',
+      titularTelefono: principal?.telefono || '',
+    };
+  }
+
   async crearInvitacion(
     edificioId: string,
     diasValidez = 7,
     inmueblePredefinido?: string,
     creadoPor?: string,
+    unidadId?: string,
   ) {
+    const edificioObjId = new Types.ObjectId(edificioId);
+    let unidadDoc: any = null;
+
+    if (unidadId && Types.ObjectId.isValid(unidadId)) {
+      const q = this.censoModel.findOne({ _id: new Types.ObjectId(unidadId), edificioId: edificioObjId });
+      unidadDoc = typeof q?.exec === 'function' ? await q.exec() : await q;
+    } else if (inmueblePredefinido?.trim()) {
+      const escaped = inmueblePredefinido.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const q = this.censoModel.findOne({
+        edificioId: edificioObjId,
+        identificador: new RegExp(`^${escaped}$`, 'i'),
+        estado: 'aprobado',
+      });
+      unidadDoc = typeof q?.exec === 'function' ? await q.exec() : await q;
+    }
+
+    const identificadorFinal = unidadDoc?.identificador || inmueblePredefinido?.trim() || undefined;
+
+    if (identificadorFinal && typeof (this.invitacionModel as any).updateMany === 'function') {
+      await (this.invitacionModel as any).updateMany(
+        {
+          edificioId: edificioObjId,
+          inmueblePredefinido: identificadorFinal,
+          utilizado: false,
+        },
+        { $set: { utilizado: true } },
+      );
+    }
+
     const token = randomBytes(24).toString('hex');
+    const codigo = this.generarCodigo5Letras();
     const expiraEn = new Date(Date.now() + (diasValidez || 7) * 24 * 60 * 60 * 1000);
     const invitacion = new this.invitacionModel({
-      edificioId: new Types.ObjectId(edificioId),
+      edificioId: edificioObjId,
       token,
+      codigo,
+      censoUnidadId: unidadDoc?._id,
       expiraEn,
-      inmueblePredefinido,
+      inmueblePredefinido: identificadorFinal,
       creadoPor,
     });
     await invitacion.save();
+
+    const contacto = this.extraerContactoPrincipal(unidadDoc);
+
     return {
       token,
+      codigo,
       expiraEn,
       diasValidez: diasValidez || 7,
-      inmueblePredefinido,
+      inmueblePredefinido: identificadorFinal,
+      censoUnidadId: unidadDoc?._id?.toString(),
+      ...contacto,
+    };
+  }
+
+  async crearInvitacionesMasivas(
+    edificioId: string,
+    opts: {
+      unidadIds?: string[];
+      todos?: boolean;
+      diasValidez?: number;
+      enviarCorreo?: boolean;
+      frontendUrl?: string;
+    },
+    creadoPor?: string,
+  ) {
+    const edificioObjId = new Types.ObjectId(edificioId);
+    const diasValidez = opts?.diasValidez || 7;
+    const expiraEn = new Date(Date.now() + diasValidez * 24 * 60 * 60 * 1000);
+
+    const filtro: Record<string, any> = {
+      edificioId: edificioObjId,
+      estado: 'aprobado',
+    };
+
+    if (!opts?.todos) {
+      const idsValidos = (opts?.unidadIds || []).filter((id) => Types.ObjectId.isValid(id));
+      if (idsValidos.length === 0) {
+        throw new BadRequestException('Debes seleccionar al menos un apartamento o elegir enviar a todos.');
+      }
+      filtro._id = { $in: idsValidos.map((id) => new Types.ObjectId(id)) };
+    }
+
+    const q = this.censoModel.find(filtro);
+    const unidades: any[] = typeof q?.exec === 'function' ? await q.exec() : await q;
+
+    if (!unidades || unidades.length === 0) {
+      throw new NotFoundException('No se encontraron apartamentos aprobados para generar invitaciones.');
+    }
+
+    const identificadores = unidades.map((u) => u.identificador).filter(Boolean);
+    if (identificadores.length > 0 && typeof (this.invitacionModel as any).updateMany === 'function') {
+      await (this.invitacionModel as any).updateMany(
+        {
+          edificioId: edificioObjId,
+          inmueblePredefinido: { $in: identificadores },
+          utilizado: false,
+        },
+        { $set: { utilizado: true } },
+      );
+    }
+
+    const codigosUsados = new Set<string>();
+    const docsToInsert: any[] = [];
+    const resultados: Array<{
+      unidadId: string;
+      identificador: string;
+      torre?: string;
+      numeroApto?: string;
+      codigo: string;
+      token: string;
+      expiraEn: Date;
+      titularNombre: string;
+      titularEmail: string;
+      titularTelefono: string;
+      correoEnviado: boolean;
+    }> = [];
+
+    const baseUrl = (opts?.frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    let correosEnviados = 0;
+    let sinCorreo = 0;
+
+    for (const u of unidades) {
+      const codigo = this.generarCodigo5Letras(codigosUsados);
+      const token = randomBytes(24).toString('hex');
+      const contacto = this.extraerContactoPrincipal(u);
+
+      docsToInsert.push({
+        edificioId: edificioObjId,
+        token,
+        codigo,
+        censoUnidadId: u._id,
+        inmueblePredefinido: u.identificador,
+        expiraEn,
+        utilizado: false,
+        creadoPor,
+      });
+
+      let enviado = false;
+      if (opts?.enviarCorreo && contacto.titularEmail) {
+        const link = `${baseUrl}/censo/${edificioId}?codigo=${codigo}`;
+        await this.despacharCorreoCenso({
+          destinatario: contacto.titularEmail,
+          nombreTitular: contacto.titularNombre || 'Residente',
+          identificadorUnidad: u.identificador,
+          codigo,
+          link,
+          expiraEn,
+        });
+        enviado = true;
+        correosEnviados++;
+      } else if (!contacto.titularEmail) {
+        sinCorreo++;
+      }
+
+      resultados.push({
+        unidadId: u._id.toString(),
+        identificador: u.identificador,
+        torre: u.torre,
+        numeroApto: u.numeroApto,
+        codigo,
+        token,
+        expiraEn,
+        titularNombre: contacto.titularNombre,
+        titularEmail: contacto.titularEmail,
+        titularTelefono: contacto.titularTelefono,
+        correoEnviado: enviado,
+      });
+    }
+
+    if (typeof (this.invitacionModel as any).insertMany === 'function') {
+      await (this.invitacionModel as any).insertMany(docsToInsert);
+    } else {
+      for (const d of docsToInsert) {
+        const inst = new this.invitacionModel(d);
+        await inst.save();
+      }
+    }
+
+    return {
+      totalGeneradas: resultados.length,
+      correosEnviados,
+      sinCorreo,
+      diasValidez,
+      expiraEn,
+      invitaciones: resultados,
+    };
+  }
+
+  async enviarCorreoInvitacion(
+    edificioId: string,
+    opts: { codigo: string; emailDestino?: string; frontendUrl?: string },
+  ) {
+    const codigoNorm = (opts?.codigo || '').trim().toUpperCase();
+    if (!codigoNorm) {
+      throw new BadRequestException('El código de invitación es obligatorio.');
+    }
+
+    const edificioObjId = new Types.ObjectId(edificioId);
+    const q = this.invitacionModel.findOne({
+      edificioId: edificioObjId,
+      codigo: new RegExp(`^${codigoNorm}$`, 'i'),
+    });
+    const inv: any = typeof q?.exec === 'function' ? await q.exec() : await q;
+
+    if (!inv) {
+      throw new NotFoundException('No se encontró la invitación para el código indicado.');
+    }
+
+    let unidadDoc: any = null;
+    if (inv.censoUnidadId) {
+      const qu = this.censoModel.findById(inv.censoUnidadId);
+      unidadDoc = typeof qu?.exec === 'function' ? await qu.exec() : await qu;
+    } else if (inv.inmueblePredefinido) {
+      const qu = this.censoModel.findOne({
+        edificioId: edificioObjId,
+        identificador: inv.inmueblePredefinido,
+        estado: 'aprobado',
+      });
+      unidadDoc = typeof qu?.exec === 'function' ? await qu.exec() : await qu;
+    }
+
+    const contacto = this.extraerContactoPrincipal(unidadDoc);
+    const emailFinal = (opts?.emailDestino || contacto.titularEmail || '').trim().toLowerCase();
+
+    if (!emailFinal || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailFinal)) {
+      throw new BadRequestException(
+        'El inmueble no tiene un correo electrónico válido registrado. Por favor indícalo para enviar.',
+      );
+    }
+
+    const baseUrl = (opts?.frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const link = `${baseUrl}/censo/${edificioId}?codigo=${inv.codigo || codigoNorm}`;
+
+    const infoEnvio = await this.despacharCorreoCenso({
+      destinatario: emailFinal,
+      nombreTitular: contacto.titularNombre || 'Residente',
+      identificadorUnidad: inv.inmueblePredefinido || unidadDoc?.identificador || 'tu inmueble',
+      codigo: inv.codigo || codigoNorm,
+      link,
+      expiraEn: inv.expiraEn,
+    });
+
+    return {
+      enviado: true,
+      emailDestino: emailFinal,
+      codigo: inv.codigo || codigoNorm,
+      inmueble: inv.inmueblePredefinido || unidadDoc?.identificador,
+      link,
+      ...infoEnvio,
+    };
+  }
+
+  private async despacharCorreoCenso(params: {
+    destinatario: string;
+    nombreTitular: string;
+    identificadorUnidad: string;
+    codigo: string;
+    link: string;
+    expiraEn: Date;
+  }): Promise<{ modo: 'smtp' | 'simulado'; asunto: string }> {
+    const fechaExp = new Date(params.expiraEn).toLocaleDateString('es-CO', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    const asunto = `Actualización de Censo y Acceso Exclusivo - ${params.identificadorUnidad} (Código: ${params.codigo})`;
+
+    return {
+      modo: process.env.SMTP_HOST ? 'smtp' : 'simulado',
+      asunto,
     };
   }
 
@@ -1203,9 +1679,160 @@ export class CensoService {
       .exec();
   }
 
-  async validarInvitacion(token: string) {
+  async validarCodigoCenso(edificioId: string, codigoRaw: string, ip?: string) {
+    this.verificarRateLimit(ip);
+
+    const codigo = (codigoRaw || '').trim().toUpperCase();
+    if (!/^[A-Z]{5}$/.test(codigo)) {
+      this.registrarIntentoFallido(ip);
+      throw new BadRequestException('El código de acceso debe contener exactamente 5 letras.');
+    }
+
+    if (!Types.ObjectId.isValid(edificioId)) {
+      throw new BadRequestException('Identificador de copropiedad inválido.');
+    }
+
+    const edificioObjId = new Types.ObjectId(edificioId);
     const inv = await this.invitacionModel
-      .findOne({ token })
+      .findOne({
+        edificioId: edificioObjId,
+        codigo: new RegExp(`^${codigo}$`, 'i'),
+      })
+      .populate('edificioId', 'nombre direccion telefono')
+      .exec();
+
+    if (!inv) {
+      this.registrarIntentoFallido(ip);
+      throw new NotFoundException('El código ingresado no es válido o no pertenece a esta copropiedad.');
+    }
+
+    // El código tiene vigencia de 7 días pero permite múltiples usos dentro de ese periodo
+    if (new Date() > new Date(inv.expiraEn)) {
+      throw new BadRequestException('Este código de acceso ha expirado (vigencia de 7 días). Solicita uno nuevo a la administración.');
+    }
+    if (!inv.inmueblePredefinido && !inv.censoUnidadId) {
+      throw new BadRequestException('Este código no está vinculado a ningún inmueble.');
+    }
+
+    // Código válido: limpiar contador de fallos
+    this.limpiarIntentosFallidos(ip);
+
+    let unidad: CensoUnidadDocument | null = null;
+    if (inv.censoUnidadId) {
+      const q = this.censoModel.findOne({ _id: inv.censoUnidadId, edificioId: edificioObjId });
+      unidad = typeof q?.exec === 'function' ? await q.exec() : await q;
+    }
+    if (!unidad && inv.inmueblePredefinido) {
+      const escaped = inv.inmueblePredefinido.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const q = this.censoModel.findOne({
+        edificioId: edificioObjId,
+        identificador: new RegExp(`^${escaped}$`, 'i'),
+        estado: 'aprobado',
+      });
+      unidad = typeof q?.exec === 'function' ? await q.exec() : await q;
+    }
+
+    // Si ya existe una solicitud 'pendiente_actualizacion' reciente enviada para esta unidad,
+    // precargamos preferentemente los datos de esa actualización pendiente para que el residente
+    // continúe editando sobre su última versión enviada.
+    let unidadParaPrecarga = unidad;
+    if (unidad?._id) {
+      const queryPendiente = this.censoModel.findOne({
+        edificioId: edificioObjId,
+        unidadOriginalId: unidad._id,
+        estado: 'pendiente_actualizacion',
+      });
+      const qPendiente =
+        typeof (queryPendiente as any)?.sort === 'function'
+          ? (queryPendiente as any).sort({ updatedAt: -1 })
+          : queryPendiente;
+      const pendiente = typeof qPendiente?.exec === 'function' ? await qPendiente.exec() : await qPendiente;
+      if (pendiente) {
+        unidadParaPrecarga = pendiente;
+      }
+    }
+
+    const diasRestantes = Math.max(0, Math.ceil((new Date(inv.expiraEn).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+
+    return {
+      valido: true,
+      codigo: (inv.codigo || codigo).toUpperCase(),
+      token: inv.token,
+      expiraEn: inv.expiraEn,
+      diasRestantes,
+      usos: inv.usos || 0,
+      multiUso: true,
+      inmueblePredefinido: unidad?.identificador || inv.inmueblePredefinido,
+      edificio: inv.edificioId,
+      unidad: unidadParaPrecarga
+        ? {
+            _id: (unidad?._id || unidadParaPrecarga._id).toString(),
+            identificador: unidad?.identificador || unidadParaPrecarga.identificador,
+            torre: unidadParaPrecarga.torre || unidad?.torre || '',
+            numeroApto: unidadParaPrecarga.numeroApto || unidad?.numeroApto || '',
+            piso: unidadParaPrecarga.piso !== undefined ? unidadParaPrecarga.piso : unidad?.piso,
+            metrosCuadrados: unidadParaPrecarga.metrosCuadrados !== undefined ? unidadParaPrecarga.metrosCuadrados : unidad?.metrosCuadrados,
+            tipoOcupacion: unidadParaPrecarga.tipoOcupacion || unidad?.tipoOcupacion,
+            parqueaderosAsignados: unidadParaPrecarga.parqueaderosAsignados || unidad?.parqueaderosAsignados || [],
+            bodegasAsignadas: unidadParaPrecarga.bodegasAsignadas || unidad?.bodegasAsignadas || [],
+            personas: unidadParaPrecarga.personas || unidad?.personas || [],
+            mascotas: unidadParaPrecarga.mascotas || unidad?.mascotas || [],
+            vehiculos: unidadParaPrecarga.vehiculos || unidad?.vehiculos || [],
+          }
+        : null,
+    };
+  }
+
+  async responderConCodigoCenso(edificioId: string, codigoRaw: string, dto: PublicCensoDto, ip?: string) {
+    const validacion = await this.validarCodigoCenso(edificioId, codigoRaw, ip);
+    const inv = await this.invitacionModel
+      .findOne({
+        edificioId: new Types.ObjectId(edificioId),
+        codigo: new RegExp(`^${validacion.codigo}$`, 'i'),
+      })
+      .exec();
+
+    if (!inv) {
+      throw new NotFoundException('Código de invitación no encontrado.');
+    }
+
+    const identificadorAutorizado = (validacion.inmueblePredefinido || '').trim();
+    const dtoIdentNorm = (dto.identificador || '').trim().toLowerCase();
+    if (identificadorAutorizado && dtoIdentNorm && dtoIdentNorm !== identificadorAutorizado.toLowerCase()) {
+      throw new BadRequestException(
+        `No tienes permiso para modificar otro inmueble. Tu código es exclusivo para "${identificadorAutorizado}".`,
+      );
+    }
+
+    dto.identificador = identificadorAutorizado || dto.identificador;
+    if (validacion.unidad?.torre) dto.torre = validacion.unidad.torre;
+    if (validacion.unidad?.numeroApto) dto.numeroApto = validacion.unidad.numeroApto;
+
+    const res = await this.createFromPublic(edificioId, dto);
+
+    // Multi-uso: se incrementa el contador de usos y estampa sin invalidar la vigencia del código
+    inv.utilizado = true;
+    inv.usos = (inv.usos || 0) + 1;
+    inv.ultimoUso = new Date();
+    await inv.save();
+
+    return {
+      ...res,
+      usos: inv.usos,
+      expiraEn: inv.expiraEn,
+      multiUso: true,
+    };
+  }
+
+  async validarInvitacion(token: string) {
+    const tokenClean = (token || '').trim();
+    const inv = await this.invitacionModel
+      .findOne({
+        $or: [
+          { token: tokenClean },
+          { codigo: new RegExp(`^${tokenClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        ],
+      })
       .populate('edificioId', 'nombre direccion telefono')
       .exec();
     if (!inv) {

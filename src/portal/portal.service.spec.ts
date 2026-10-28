@@ -4,7 +4,7 @@ import { BadRequestException, NotFoundException, ForbiddenException } from '@nes
 import { Types } from 'mongoose';
 import { PortalService } from './portal.service';
 import { Propietario } from '../propietarios/propietario.schema';
-import { CensoUnidad } from '../censo/censo.schema';
+import { CensoUnidad, ParqueaderoInventario } from '../censo/censo.schema';
 import { Edificio } from '../edificios/edificio.schema';
 import { Reserva } from '../reservas/reserva.schema';
 import { ReservasService } from '../reservas/reservas.service';
@@ -18,6 +18,7 @@ describe('PortalService', () => {
   let mockCensoModel: any;
   let mockEdificioModel: any;
   let mockReservaModel: any;
+  let mockParqueaderoModel: any;
   let mockReservasService: any;
   let mockZonasService: any;
 
@@ -34,6 +35,15 @@ describe('PortalService', () => {
       findById: jest.fn(),
       findOne: jest.fn(),
       deleteMany: jest.fn(),
+    };
+
+    mockParqueaderoModel = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+      findOne: jest.fn().mockResolvedValue(null),
     };
 
     // Constructor mock for `new this.censoModel(...)`
@@ -86,6 +96,10 @@ describe('PortalService', () => {
         {
           provide: getModelToken(Reserva.name),
           useValue: mockReservaModel,
+        },
+        {
+          provide: getModelToken(ParqueaderoInventario.name),
+          useValue: mockParqueaderoModel,
         },
         {
           provide: ReservasService,

@@ -9,6 +9,8 @@ import {
   Query,
   UseGuards,
   Request,
+  Ip,
+  Req,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CensoService } from './censo.service';
@@ -94,7 +96,7 @@ export class CensoController {
   @UseGuards(JwtAuthGuard)
   @Post('invitaciones')
   async crearInvitacion(
-    @Body() body: { diasValidez?: number; inmueblePredefinido?: string },
+    @Body() body: { diasValidez?: number; inmueblePredefinido?: string; unidadId?: string },
     @Request() req: { user: AuthenticatedUser },
   ) {
     const edificioId = this.getEdificioId(req);
@@ -103,7 +105,39 @@ export class CensoController {
       body?.diasValidez || 7,
       body?.inmueblePredefinido,
       req.user?.id || req.user?.sub,
+      body?.unidadId,
     );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('invitaciones/masivo')
+  async crearInvitacionesMasivas(
+    @Body()
+    body: {
+      unidadIds?: string[];
+      todos?: boolean;
+      diasValidez?: number;
+      enviarCorreo?: boolean;
+      frontendUrl?: string;
+    },
+    @Request() req: { user: AuthenticatedUser },
+  ) {
+    const edificioId = this.getEdificioId(req);
+    return this.censoService.crearInvitacionesMasivas(
+      edificioId,
+      body || {},
+      req.user?.id || req.user?.sub,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('invitaciones/enviar-correo')
+  async enviarCorreoInvitacion(
+    @Body() body: { codigo: string; emailDestino?: string; frontendUrl?: string },
+    @Request() req: { user: AuthenticatedUser },
+  ) {
+    const edificioId = this.getEdificioId(req);
+    return this.censoService.enviarCorreoInvitacion(edificioId, body);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -214,6 +248,37 @@ export class CensoController {
     @Body() dto: PublicCensoDto,
   ) {
     return this.censoService.createFromPublic(edificioId, dto);
+  }
+
+  @Get('public/:edificioId/codigo/:codigo')
+  async validarCodigoCenso(
+    @Param('edificioId') edificioId: string,
+    @Param('codigo') codigo: string,
+    @Ip() ip: string,
+    @Req() req: any,
+  ) {
+    const clientIp =
+      (req?.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      ip ||
+      req?.socket?.remoteAddress ||
+      '127.0.0.1';
+    return this.censoService.validarCodigoCenso(edificioId, codigo, clientIp);
+  }
+
+  @Post('public/:edificioId/codigo/:codigo')
+  async responderConCodigoCenso(
+    @Param('edificioId') edificioId: string,
+    @Param('codigo') codigo: string,
+    @Body() dto: PublicCensoDto,
+    @Ip() ip: string,
+    @Req() req: any,
+  ) {
+    const clientIp =
+      (req?.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      ip ||
+      req?.socket?.remoteAddress ||
+      '127.0.0.1';
+    return this.censoService.responderConCodigoCenso(edificioId, codigo, dto, clientIp);
   }
 
   @Get('public/invitacion/:token')

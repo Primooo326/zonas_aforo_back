@@ -7,7 +7,12 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Propietario, PropietarioDocument } from '../propietarios/propietario.schema';
-import { CensoUnidad, CensoUnidadDocument } from '../censo/censo.schema';
+import {
+  CensoUnidad,
+  CensoUnidadDocument,
+  ParqueaderoInventario,
+  ParqueaderoInventarioDocument,
+} from '../censo/censo.schema';
 import { Edificio, EdificioDocument } from '../edificios/edificio.schema';
 import { Reserva, ReservaDocument } from '../reservas/reserva.schema';
 import { ReservasService } from '../reservas/reservas.service';
@@ -29,6 +34,8 @@ export class PortalService {
     private readonly edificioModel: Model<EdificioDocument>,
     @InjectModel(Reserva.name)
     private readonly reservaModel: Model<ReservaDocument>,
+    @InjectModel(ParqueaderoInventario.name)
+    private readonly parqueaderoModel: Model<ParqueaderoInventarioDocument>,
     private readonly reservasService: ReservasService,
     private readonly zonasService: ZonasService,
     private readonly paquetesService: PaquetesService,
@@ -71,11 +78,20 @@ export class PortalService {
       .select('nombre email')
       .lean();
 
+    const parqueaderosInventario = await this.parqueaderoModel
+      .find({
+        edificioId: propietario.edificioId,
+        esVisitante: false,
+      })
+      .select('numero tipo esCubierto torreAsignada aptoAsignado esVisitante')
+      .lean();
+
     return {
       propietario,
       unidad,
       edificio,
       solicitudPendiente,
+      parqueaderosInventario,
     };
   }
 
@@ -93,6 +109,51 @@ export class PortalService {
     );
     if (!unidadOriginal) {
       throw new NotFoundException('Unidad original no encontrada');
+    }
+
+    // Validación estricta de parqueaderos: no permitir visitantes ni asignados a otra unidad
+    if (dto.vehiculos && Array.isArray(dto.vehiculos) && dto.vehiculos.length > 0) {
+      const parqUsados = new Set<string>();
+      const aptoNorm = (unidadOriginal.numeroApto || '').trim().toLowerCase();
+      const torreNorm = (unidadOriginal.torre || '').trim().toLowerCase();
+
+      for (const v of dto.vehiculos) {
+        const num = (v.numeroParqueadero || '').trim().toUpperCase();
+        if (!num) continue;
+
+        if (parqUsados.has(num)) {
+          throw new BadRequestException(
+            `El parqueadero "${num}" no puede ser asignado a más de un vehículo en la misma solicitud.`,
+          );
+        }
+        parqUsados.add(num);
+
+        const parqDb = await this.parqueaderoModel.findOne({
+          edificioId: unidadOriginal.edificioId,
+          numero: new RegExp(`^${num}$`, 'i'),
+        });
+
+        if (parqDb) {
+          if (parqDb.esVisitante) {
+            throw new BadRequestException(
+              `El parqueadero "${num}" está reservado exclusivamente para visitantes. No puede asignarse a un vehículo residente.`,
+            );
+          }
+
+          const pApto = (parqDb.aptoAsignado || '').trim().toLowerCase();
+          const pTorre = (parqDb.torreAsignada || '').trim().toLowerCase();
+          if (pApto) {
+            const matchApto = pApto === aptoNorm;
+            const matchTorre = !pTorre || !torreNorm || pTorre === torreNorm;
+            if (!matchApto || !matchTorre) {
+              const lugar = [parqDb.torreAsignada, parqDb.aptoAsignado ? `Apto ${parqDb.aptoAsignado}` : ''].filter(Boolean).join(' ');
+              throw new BadRequestException(
+                `El parqueadero "${num}" se encuentra asignado a ${lugar || 'otra unidad'}. No puede ser asignado a tu inmueble.`,
+              );
+            }
+          }
+        }
+      }
     }
 
     const existentePendiente = await this.censoModel.findOne({

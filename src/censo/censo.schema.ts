@@ -292,11 +292,23 @@ export class InvitacionCenso {
   @Prop({ required: true, unique: true, index: true })
   token: string;
 
+  @Prop({ trim: true, uppercase: true, index: true })
+  codigo?: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'CensoUnidad', required: false })
+  censoUnidadId?: Types.ObjectId;
+
   @Prop({ required: true })
   expiraEn: Date;
 
   @Prop({ default: false })
   utilizado: boolean;
+
+  @Prop({ default: 0 })
+  usos?: number;
+
+  @Prop()
+  ultimoUso?: Date;
 
   @Prop({ trim: true })
   inmueblePredefinido?: string;
@@ -306,4 +318,5 @@ export class InvitacionCenso {
 }
 export const InvitacionCensoSchema = SchemaFactory.createForClass(InvitacionCenso);
 InvitacionCensoSchema.index({ edificioId: 1, token: 1 });
+InvitacionCensoSchema.index({ edificioId: 1, codigo: 1 });
 

@@ -612,4 +612,210 @@ describe('CensoService', () => {
     });
   });
 
+  describe('Códigos de 5 letras por inmueble (validarCodigoCenso y responderConCodigoCenso)', () => {
+    const edificioId = new Types.ObjectId().toString();
+
+    it('generarCodigo5Letras debe producir exactamente 5 letras mayúsculas [A-Z]{5}', () => {
+      const usados = new Set<string>();
+      for (let i = 0; i < 20; i++) {
+        const cod = service.generarCodigo5Letras(usados);
+        expect(cod).toMatch(/^[A-Z]{5}$/);
+      }
+      expect(usados.size).toBe(20);
+    });
+
+    it('validarCodigoCenso debe aceptar códigos en minúsculas o mayúsculas y retornar los datos del inmueble', async () => {
+      const unidadId = new Types.ObjectId();
+      mockInvitacionModel.findOne.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            codigo: 'KRPWM',
+            token: 'tok-123',
+            expiraEn: new Date(Date.now() + 86400000),
+            utilizado: false,
+            inmueblePredefinido: 'Ámsterdam - Apto 101A',
+            censoUnidadId: unidadId,
+            edificioId: { _id: edificioId, nombre: 'CR Rivera del Valle' },
+          }),
+        }),
+      });
+
+      mockCensoModel.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          _id: unidadId,
+          identificador: 'Ámsterdam - Apto 101A',
+          torre: 'Ámsterdam',
+          numeroApto: '101A',
+          personas: [{ nombreCompleto: 'Gonzalo Ortiz', condicion: 'propietario', esContactoPrincipal: true }],
+          mascotas: [],
+          vehiculos: [],
+        }),
+      });
+
+      const res = await service.validarCodigoCenso(edificioId, 'krpwm');
+      expect(res.valido).toBe(true);
+      expect(res.codigo).toBe('KRPWM');
+      expect(res.inmueblePredefinido).toBe('Ámsterdam - Apto 101A');
+      expect(res.unidad?.personas[0].nombreCompleto).toBe('Gonzalo Ortiz');
+    });
+
+    it('responderConCodigoCenso debe rechazar si se intenta modificar otro inmueble distinto al del código', async () => {
+      const unidadId = new Types.ObjectId();
+      mockInvitacionModel.findOne.mockImplementation(() => ({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            codigo: 'ABCDE',
+            token: 'tok-abc',
+            expiraEn: new Date(Date.now() + 86400000),
+            utilizado: false,
+            inmueblePredefinido: 'Ámsterdam - Apto 101A',
+            censoUnidadId: unidadId,
+            edificioId: { _id: edificioId, nombre: 'CR Rivera del Valle' },
+          }),
+        }),
+        exec: jest.fn().mockResolvedValue({
+          codigo: 'ABCDE',
+          token: 'tok-abc',
+          expiraEn: new Date(Date.now() + 86400000),
+          utilizado: false,
+          inmueblePredefinido: 'Ámsterdam - Apto 101A',
+          censoUnidadId: unidadId,
+          save: jest.fn(),
+        }),
+      }));
+
+      mockCensoModel.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          _id: unidadId,
+          identificador: 'Ámsterdam - Apto 101A',
+          torre: 'Ámsterdam',
+          numeroApto: '101A',
+          personas: [],
+        }),
+      });
+
+      await expect(
+        service.responderConCodigoCenso(edificioId, 'abcde', {
+          identificador: 'Ámsterdam - Apto 999Z',
+          personas: [],
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('validarCodigoCenso debe permitir múltiples usos si la invitación sigue vigente (menos de 7 días)', async () => {
+      const unidadId = new Types.ObjectId();
+      mockInvitacionModel.findOne.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            codigo: 'MULTI',
+            token: 'tok-multi',
+            expiraEn: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000), // vigencia 6 días restantes
+            utilizado: true, // ya se usó previamente
+            usos: 2,
+            inmueblePredefinido: 'Ámsterdam - Apto 101A',
+            censoUnidadId: unidadId,
+            edificioId: { _id: edificioId, nombre: 'CR Rivera del Valle' },
+          }),
+        }),
+      });
+
+      mockCensoModel.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          _id: unidadId,
+          identificador: 'Ámsterdam - Apto 101A',
+          torre: 'Ámsterdam',
+          numeroApto: '101A',
+          personas: [{ nombreCompleto: 'Gonzalo Ortiz', condicion: 'propietario', esContactoPrincipal: true }],
+        }),
+      });
+
+      const res = await service.validarCodigoCenso(edificioId, 'MULTI');
+      expect(res.valido).toBe(true);
+      expect(res.multiUso).toBe(true);
+      expect(res.usos).toBe(2);
+      expect(res.diasRestantes).toBeGreaterThan(0);
+    });
+
+    it('validarCodigoCenso debe rechazar si la invitación ya superó los 7 días de vigencia', async () => {
+      mockInvitacionModel.findOne.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            codigo: 'EXPIR',
+            token: 'tok-expir',
+            expiraEn: new Date(Date.now() - 1000), // expirada hace 1 segundo
+            utilizado: false,
+            inmueblePredefinido: 'Ámsterdam - Apto 101A',
+          }),
+        }),
+      });
+
+      await expect(service.validarCodigoCenso(edificioId, 'EXPIR')).rejects.toThrow(BadRequestException);
+    });
+
+    it('rate limiting: debe permitir intentos fallidos hasta 20 veces y luego bloquear con HTTP 429', async () => {
+      const testIp = '192.168.1.99';
+      service.limpiarIntentosFallidos(testIp);
+
+      mockInvitacionModel.findOne.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(null), // código inexistente
+        }),
+      });
+
+      // Primeros 19 intentos fallidos lanzan NotFoundException (no 429)
+      for (let i = 0; i < 19; i++) {
+        await expect(service.validarCodigoCenso(edificioId, 'WRONG', testIp)).rejects.toThrow(NotFoundException);
+      }
+
+      // El intento 20 también falla con NotFoundException pero activa el bloqueo de rate limit
+      await expect(service.validarCodigoCenso(edificioId, 'WRONG', testIp)).rejects.toThrow(NotFoundException);
+
+      // El intento 21 es bloqueado de inmediato con HTTP 429 Too Many Requests
+      await expect(service.validarCodigoCenso(edificioId, 'WRONG', testIp)).rejects.toThrow(
+        /Demasiados intentos fallidos/,
+      );
+
+      // Limpiar al finalizar el test
+      service.limpiarIntentosFallidos(testIp);
+    });
+
+    it('debe rechazar si dos vehículos en la misma solicitud reclaman el mismo número de parqueadero', async () => {
+      mockCensoModel.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.createFromPublic(edificioId, {
+          identificador: 'Ámsterdam - Apto 102B',
+          personas: [],
+          vehiculos: [
+            { tipo: 'Carro', placa: 'ABC123', parqueaEnEdificio: true, numeroParqueadero: 'M-020' },
+            { tipo: 'Moto', placa: 'XYZ987', parqueaEnEdificio: true, numeroParqueadero: 'M-020' },
+          ],
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('debe rechazar si un vehículo intenta asignar un parqueadero ya asignado a otro apartamento', async () => {
+      mockCensoModel.findOne.mockResolvedValue(null);
+      mockParqueaderoModel.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            numero: 'M-020',
+            torreAsignada: 'Bogotá',
+            aptoAsignado: '405E',
+          },
+        ]),
+      });
+
+      await expect(
+        service.createFromPublic(edificioId, {
+          identificador: 'Ámsterdam - Apto 102B',
+          personas: [],
+          vehiculos: [
+            { tipo: 'Moto', placa: 'MYV53H', parqueaEnEdificio: true, numeroParqueadero: 'M-020' },
+          ],
+        } as any),
+      ).rejects.toThrow(/ya se encuentra asignado a Bogotá Apto 405E/);
+    });
+  });
+
 });
